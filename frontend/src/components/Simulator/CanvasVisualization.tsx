@@ -74,11 +74,13 @@ export default function CanvasVisualization({
   onCanvasClick,
   onEdgeClick,
   selectedNodeId = null,
-  width = 800,
-  height = 500,
+  width: defaultWidth = 800,
+  height: defaultHeight = 500,
   scale = 1,
 }: CanvasVisualizationProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dimensions, setDimensions] = useState({ width: defaultWidth, height: defaultHeight });
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [animationTime, setAnimationTime] = useState(0);
@@ -87,6 +89,27 @@ export default function CanvasVisualization({
   const prevStatesRef = useRef<Record<string, VisualNode['state']>>({});
   const transitionProgressRef = useRef<Record<string, { startState: VisualNode['state']; endState: VisualNode['state']; startTime: number }>>({});
 
+  // Responsive container measuring
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      if (!entries || entries.length === 0) return;
+      const { width, height } = entries[0].contentRect;
+      setDimensions({
+        width: Math.max(width, 300),
+        height: Math.max(height, 350)
+      });
+    });
+
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
+  // State transition tracker
   useEffect(() => {
     nodes.forEach(node => {
       const prevState = prevStatesRef.current[node.id];
@@ -117,6 +140,63 @@ export default function CanvasVisualization({
     return () => cancelAnimationFrame(animId);
   }, []);
 
+  // Calculate Graph Bounding Box and Scaling Factors dynamically
+  const getTransformParams = useCallback(() => {
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+
+    nodes.forEach(node => {
+      if (node.x < minX) minX = node.x;
+      if (node.x > maxX) maxX = node.x;
+      if (node.y < minY) minY = node.y;
+      if (node.y > maxY) maxY = node.y;
+    });
+
+    // Provide safe defaults if graph has 0 or 1 nodes
+    if (nodes.length === 0 || minX === Infinity) {
+      minX = 100; maxX = 700;
+      minY = 100; maxY = 400;
+    }
+
+    const graphWidth = maxX - minX || 1;
+    const graphHeight = maxY - minY || 1;
+    const graphCenterX = (minX + maxX) / 2;
+    const graphCenterY = (minY + maxY) / 2;
+
+    const containerWidth = dimensions.width;
+    const containerHeight = dimensions.height;
+    const containerCenterX = containerWidth / 2;
+    const containerCenterY = containerHeight / 2;
+
+    const padding = 65;
+    const scaleX = (containerWidth - padding * 2) / graphWidth;
+    const scaleY = (containerHeight - padding * 2) / graphHeight;
+    const scaleFactor = Math.min(scaleX, scaleY, 1.1);
+
+    return {
+      graphCenterX,
+      graphCenterY,
+      containerCenterX,
+      containerCenterY,
+      scaleFactor
+    };
+  }, [nodes, dimensions]);
+
+  // Map Screen mouse coordinates back to Graph Coordinates
+  const mapScreenToGraph = useCallback((screenX: number, screenY: number) => {
+    const {
+      graphCenterX,
+      graphCenterY,
+      containerCenterX,
+      containerCenterY,
+      scaleFactor
+    } = getTransformParams();
+
+    const x = (screenX - containerCenterX) / scaleFactor + graphCenterX;
+    const y = (screenY - containerCenterY) / scaleFactor + graphCenterY;
+    return { x, y };
+  }, [getTransformParams]);
+
   // Main Drawing Function
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,34 +204,45 @@ export default function CanvasVisualization({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    const containerWidth = dimensions.width;
+    const containerHeight = dimensions.height;
+
     // Support High DPI
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    canvas.width = containerWidth * dpr;
+    canvas.height = containerHeight * dpr;
     ctx.scale(dpr, dpr);
 
-    // Clear and draw grid
+    // 1. Clear background
     ctx.fillStyle = '#030712';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, containerWidth, containerHeight);
     
-    // Draw Grid Lines (Premium Visuals)
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
-    ctx.lineWidth = 1;
-    const gridSize = 40;
-    for (let x = 0; x < width; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    for (let y = 0; y < height; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
+    // 2. Draw Premium Dot Grid in Screen Space (doesn't scale/pan, looks amazing)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+    const dotSpacing = 30;
+    for (let x = 0; x < containerWidth; x += dotSpacing) {
+      for (let y = 0; y < containerHeight; y += dotSpacing) {
+        ctx.beginPath();
+        ctx.arc(x, y, 1, 0, 2 * Math.PI);
+        ctx.fill();
+      }
     }
 
-    // Draw Edges
+    // 3. Setup Graph Transformation Matrices (scale and center graph)
+    const {
+      graphCenterX,
+      graphCenterY,
+      containerCenterX,
+      containerCenterY,
+      scaleFactor
+    } = getTransformParams();
+
+    ctx.save();
+    ctx.translate(containerCenterX, containerCenterY);
+    ctx.scale(scaleFactor, scaleFactor);
+    ctx.translate(-graphCenterX, -graphCenterY);
+
+    // 4. Draw Edges in Graph Space
     edges.forEach((edge) => {
       const u = nodes.find(n => n.id === edge.source);
       const v = nodes.find(n => n.id === edge.target);
@@ -159,12 +250,12 @@ export default function CanvasVisualization({
 
       const colorScheme = COLORS[edge.state] || COLORS.unvisited;
       ctx.strokeStyle = colorScheme.stroke;
-      ctx.lineWidth = edge.state !== 'unvisited' ? 3 : 2;
+      ctx.lineWidth = edge.state !== 'unvisited' ? 4 : 2;
 
       // Animate flowing dashes for evaluating/active edges
       if (edge.state === 'visiting' || edge.state === 'frontier') {
         ctx.setLineDash([8, 4]);
-        ctx.lineDashOffset = -animationTime * 40;
+        ctx.lineDashOffset = -animationTime * 45;
       } else {
         ctx.setLineDash([]);
       }
@@ -174,6 +265,22 @@ export default function CanvasVisualization({
       ctx.lineTo(v.x, v.y);
       ctx.stroke();
       ctx.setLineDash([]); // Reset line dash
+
+      // Draw glowing particle pulses traveling down evaluating/active edges
+      if (edge.state === 'visiting' || edge.state === 'frontier') {
+        const pulseProgress = (animationTime * 1.5) % 1.0;
+        const pulseX = u.x + (v.x - u.x) * pulseProgress;
+        const pulseY = u.y + (v.y - u.y) * pulseProgress;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(pulseX, pulseY, 5, 0, 2 * Math.PI);
+        ctx.fillStyle = colorScheme.stroke;
+        ctx.shadowColor = colorScheme.stroke;
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.restore();
+      }
 
       // Draw arrow head if directed
       if (isDirected) {
@@ -205,11 +312,11 @@ export default function CanvasVisualization({
       const midY = (u.y + v.y) / 2;
       ctx.save();
       ctx.fillStyle = '#111827';
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.lineWidth = 1;
       
       const text = edge.weight.toString();
-      ctx.font = '11px monospace';
+      ctx.font = 'bold 11px monospace';
       const textWidth = ctx.measureText(text).width;
       
       ctx.beginPath();
@@ -224,19 +331,23 @@ export default function CanvasVisualization({
       ctx.restore();
     });
 
-    // Draw Nodes
+    // 5. Draw Nodes in Graph Space
     nodes.forEach((node) => {
       const isHovered = hoveredNodeId === node.id;
       
       // Interpolate colors dynamically for smooth state transitions
       let fillColor = COLORS[node.state]?.fill || COLORS.unvisited.fill;
       let strokeColor = COLORS[node.state]?.stroke || COLORS.unvisited.stroke;
+      let nodeScale = 1.0;
       
       const trans = transitionProgressRef.current[node.id];
       if (trans) {
         const elapsed = performance.now() - trans.startTime;
         const duration = 400; // 400ms for elegant smooth animation
         const t = Math.min(elapsed / duration, 1);
+        
+        // Elastic scale-up and settle transition (pop-in effect)
+        nodeScale = 1.0 + Math.sin(t * Math.PI) * 0.22;
         
         const startFill = COLORS[trans.startState]?.fill || COLORS.unvisited.fill;
         const endFill = COLORS[trans.endState]?.fill || COLORS.unvisited.fill;
@@ -254,19 +365,32 @@ export default function CanvasVisualization({
       const colorScheme = COLORS[node.state] || COLORS.unvisited;
       
       // Calculate dynamic radius and pulse effects
-      let radius = NODE_RADIUS;
+      let radius = NODE_RADIUS * nodeScale;
       let glowRadius = 15;
       
       if (node.state === 'frontier') {
-        const pulse = Math.sin(animationTime * 5) * 2;
+        const pulse = Math.sin(animationTime * 5) * 1.5;
         radius += pulse;
         glowRadius += pulse * 2;
       } else if (node.state === 'visiting') {
-        radius += Math.sin(animationTime * 10) * 1.5;
+        radius += Math.sin(animationTime * 9) * 1.0;
       }
 
       if (isHovered) {
         radius += 3;
+      }
+
+      // Draw visiting ambient color pulse halo under the node
+      if (node.state === 'visiting') {
+        ctx.save();
+        const visitingGlow = ctx.createRadialGradient(node.x, node.y, radius - 5, node.x, node.y, radius + 22);
+        visitingGlow.addColorStop(0, 'rgba(249, 115, 22, 0.25)');
+        visitingGlow.addColorStop(1, 'rgba(249, 115, 22, 0)');
+        ctx.fillStyle = visitingGlow;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, radius + 22, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.restore();
       }
 
       ctx.save();
@@ -290,7 +414,7 @@ export default function CanvasVisualization({
       ctx.lineWidth = 2.5;
       if (node.state === 'visiting') {
         ctx.setLineDash([12, 6]);
-        ctx.lineDashOffset = animationTime * 50;
+        ctx.lineDashOffset = animationTime * 45;
       } else {
         ctx.setLineDash([]);
       }
@@ -332,7 +456,7 @@ export default function CanvasVisualization({
         ctx.stroke();
       }
 
-      // Option B: Premium Distance / Heuristic Badge above node
+      // Distance / Heuristic Badge above node
       if (node.distance !== undefined && node.distance !== null) {
         ctx.save();
         ctx.font = 'bold 9px monospace';
@@ -369,15 +493,20 @@ export default function CanvasVisualization({
       }
     });
 
-  }, [nodes, edges, isDirected, hoveredNodeId, animationTime, width, height, selectedNodeId]);
+    ctx.restore(); // Restore context transform matrix
 
-  // Handle Interactive Mouse Actions
+  }, [nodes, edges, isDirected, hoveredNodeId, animationTime, dimensions, selectedNodeId, getTransformParams]);
+
+  // Handle Interactive Mouse Actions mapped back to graph coordinates
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    // Convert mouse screen coordinate to graph space coordinate
+    const { x, y } = mapScreenToGraph(clickX, clickY);
 
     // Check if clicked a node
     const clickedNode = nodes.find(node => {
@@ -393,7 +522,7 @@ export default function CanvasVisualization({
       const midX = (u.x + v.x) / 2;
       const midY = (u.y + v.y) / 2;
       const dist = Math.hypot(midX - x, midY - y);
-      return dist <= 20; // 20px radius around the weight label
+      return dist <= 20; // 20px radius around the weight label in graph space
     });
 
     if (clickedNode) {
@@ -410,8 +539,10 @@ export default function CanvasVisualization({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    const { x, y } = mapScreenToGraph(mouseX, mouseY);
 
     if (draggedNodeId) {
       if (onNodeDrag) onNodeDrag(draggedNodeId, x, y);
@@ -432,7 +563,7 @@ export default function CanvasVisualization({
   };
 
   return (
-    <div className={styles.canvasContainer}>
+    <div ref={containerRef} className={styles.canvasContainer}>
       <canvas
         ref={canvasRef}
         className={styles.canvas}
@@ -440,7 +571,7 @@ export default function CanvasVisualization({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ width: `${width}px`, height: `${height}px` }}
+        style={{ width: '100%', height: '100%' }}
       />
     </div>
   );

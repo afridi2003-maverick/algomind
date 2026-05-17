@@ -88,6 +88,7 @@ export function SimulatorPage() {
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [simulationResult, setSimulationResult] = useState<any | null>(null);
 
   // Graph Editor Mode States
   const [editorMode, setEditorMode] = useState<'select' | 'add_node' | 'add_edge' | 'delete'>('select');
@@ -138,6 +139,7 @@ export function SimulatorPage() {
       });
 
       setSteps(response.data.steps);
+      setSimulationResult(response.data);
       setCurrentStepIndex(0);
       setIsPlaying(true);
     } catch (err: any) {
@@ -256,13 +258,44 @@ export function SimulatorPage() {
       playbackTimerRef.current = setTimeout(() => {
         setCurrentStepIndex(prev => prev + 1);
       }, delay);
-    } else if (currentStepIndex >= steps.length - 1) {
+    } else if (currentStepIndex >= steps.length - 1 && steps.length > 0) {
       setIsPlaying(false);
     }
     return () => {
       if (playbackTimerRef.current) clearTimeout(playbackTimerRef.current);
     };
   }, [isPlaying, currentStepIndex, steps.length, speed]);
+
+  const togglePlay = () => {
+    if (currentStepIndex >= steps.length - 1) {
+      setCurrentStepIndex(0);
+      setIsPlaying(true);
+    } else {
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const getShortestPath = () => {
+    if (!simulationResult) return [];
+    const prevMap = simulationResult.previous || simulationResult.parent_tree || {};
+    const startNodeObj = nodes.find(n => n.id === 'A') || nodes[0];
+    const goalNodeObj = nodes.find(n => n.id === 'F') || nodes[nodes.length - 1];
+    if (!startNodeObj || !goalNodeObj) return [];
+    
+    const path = [];
+    let curr: string | null = goalNodeObj.id;
+    const seen = new Set<string>();
+    while (curr && !seen.has(curr)) {
+      seen.add(curr);
+      path.push(curr);
+      if (curr === startNodeObj.id) break;
+      curr = prevMap[curr] || null;
+    }
+    if (path[path.length - 1] === startNodeObj.id) {
+      return path.reverse();
+    }
+    return [];
+  };
 
   // Synchronize rendering state when step index moves
   useEffect(() => {
@@ -275,6 +308,7 @@ export function SimulatorPage() {
     setIsPlaying(false);
     setSteps([]);
     setCurrentStepIndex(-1);
+    setSimulationResult(null);
     setNodes(prev => prev.map(n => ({ ...n, state: 'unvisited', distance: undefined, heuristic: undefined })));
     setEdges(prev => prev.map(e => ({ ...e, state: 'unvisited' })));
   };
@@ -398,7 +432,7 @@ export function SimulatorPage() {
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  👆 Move & Drag
+                  Move and Drag
                 </button>
                 <button
                   onClick={() => { setEditorMode('add_node'); setFirstSelectedNodeId(null); }}
@@ -408,7 +442,7 @@ export function SimulatorPage() {
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  ➕ Add Node
+                  Add Node
                 </button>
                 <button
                   onClick={() => { setEditorMode('add_edge'); setFirstSelectedNodeId(null); }}
@@ -418,7 +452,7 @@ export function SimulatorPage() {
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  🔗 Add Edge {firstSelectedNodeId && `(From ${firstSelectedNodeId}...)`}
+                  Add Edge {firstSelectedNodeId && `(From ${firstSelectedNodeId}...)`}
                 </button>
                 <button
                   onClick={() => { setEditorMode('delete'); setFirstSelectedNodeId(null); }}
@@ -428,7 +462,7 @@ export function SimulatorPage() {
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  ❌ Delete
+                  Delete
                 </button>
               </div>
             </div>
@@ -438,13 +472,13 @@ export function SimulatorPage() {
                 onClick={handleClearGraph}
                 className="px-3 py-1.5 bg-red-950/30 hover:bg-red-900/40 border border-red-900/40 hover:border-red-500/30 rounded-lg text-xs font-bold text-red-400 transition-colors cursor-pointer"
               >
-                🧹 Clear
+                Clear Graph
               </button>
               <button
                 onClick={handleResetToDefault}
                 className="px-3 py-1.5 bg-gray-800/40 hover:bg-gray-700/50 border border-gray-700/60 hover:border-gray-500/40 rounded-lg text-xs font-bold text-gray-200 transition-colors cursor-pointer"
               >
-                🔄 Restore Default
+                Restore Default
               </button>
             </div>
           </div>
@@ -464,6 +498,135 @@ export function SimulatorPage() {
             />
           </div>
 
+          {/* Simulation Results Panel */}
+          {currentStepIndex === steps.length - 1 && steps.length > 0 && simulationResult && (
+            <div className="mt-4 bg-gray-900/90 border border-emerald-500/30 rounded-xl p-5 backdrop-blur shadow-2xl transition-all duration-500 animate-fadeIn">
+              <div className="flex items-center justify-between border-b border-gray-800 pb-3 mb-4">
+                <div>
+                  <h3 className="text-emerald-400 font-bold text-base tracking-wide uppercase">Simulation Completed</h3>
+                  <p className="text-gray-400 text-xs mt-0.5">Algorithm finished executing and converged successfully.</p>
+                </div>
+                <div className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                  Success
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Metrics */}
+                <div className="space-y-4">
+                  {/* BFS / DFS Traversal Results */}
+                  {(selectedAlgo === 'BFS' || selectedAlgo === 'DFS') && simulationResult.visited_order && (
+                    <div>
+                      <span className="text-xs font-bold text-gray-500 uppercase block mb-2">Node Traversal Order</span>
+                      <div className="flex flex-wrap items-center gap-1.5 bg-black/40 p-3 rounded-lg border border-gray-800">
+                        {simulationResult.visited_order.map((nodeId: string, idx: number) => (
+                          <React.Fragment key={nodeId}>
+                            <span className="bg-emerald-950/40 text-emerald-400 border border-emerald-500/20 px-2.5 py-1 rounded text-xs font-mono font-bold">
+                              {nodeId}
+                            </span>
+                            {idx < simulationResult.visited_order.length - 1 && (
+                              <span className="text-gray-600 text-xs">-&gt;</span>
+                            )}
+                          </React.Fragment>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex items-center gap-4 text-xs">
+                        <span className="text-gray-400">Total Visited Nodes: <strong className="text-gray-200">{simulationResult.visited_order.length}</strong></span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Dijkstra / BellmanFord / AStar Results */}
+                  {(selectedAlgo === 'Dijkstra' || selectedAlgo === 'BellmanFord' || selectedAlgo === 'AStar') && (
+                    <div>
+                      <span className="text-xs font-bold text-gray-500 uppercase block mb-2">Shortest Path Found</span>
+                      {(() => {
+                        const path = getShortestPath();
+                        const goalNodeObj = nodes.find(n => n.id === 'F') || nodes[nodes.length - 1];
+                        const distKey = 'distances';
+                        const distMap = simulationResult[distKey] || {};
+                        const cost = goalNodeObj ? distMap[goalNodeObj.id] : null;
+
+                        if (path.length > 0) {
+                          return (
+                            <div>
+                              <div className="flex flex-wrap items-center gap-1.5 bg-black/40 p-3 rounded-lg border border-gray-800 mb-2">
+                                {path.map((nodeId: string, idx: number) => (
+                                  <React.Fragment key={nodeId}>
+                                    <span className="bg-cyan-950/40 text-cyan-400 border border-cyan-500/20 px-2.5 py-1 rounded text-xs font-mono font-bold">
+                                      {nodeId}
+                                    </span>
+                                    {idx < path.length - 1 && (
+                                      <span className="text-gray-600 text-xs">-&gt;</span>
+                                    )}
+                                  </React.Fragment>
+                                ))}
+                              </div>
+                              <div className="flex items-center gap-6 text-xs mt-2.5">
+                                <span className="text-gray-400">Total Path Cost: <strong className="text-cyan-400 text-sm font-mono font-bold">{cost !== null && cost !== undefined ? cost : 'N/A'}</strong></span>
+                                <span className="text-gray-400">Hop Count: <strong className="text-gray-200">{path.length - 1}</strong></span>
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="bg-red-950/20 border border-red-500/20 text-red-400 text-xs p-3 rounded-lg">
+                              No valid path could be found from start node to the destination.
+                            </div>
+                          );
+                        }
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Kruskal MST Results */}
+                  {selectedAlgo === 'Kruskal' && simulationResult.mst_edges && (
+                    <div>
+                      <span className="text-xs font-bold text-gray-500 uppercase block mb-2">Minimum Spanning Tree Edges</span>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-black/40 p-3 rounded-lg border border-gray-800 mb-2">
+                        {simulationResult.mst_edges.map((edge: any, idx: number) => (
+                          <div key={idx} className="bg-emerald-950/30 text-emerald-400 border border-emerald-500/10 px-2 py-1 rounded text-xs font-mono font-semibold flex items-center justify-between">
+                            <span>{edge.source} - {edge.target}</span>
+                            <span className="text-gray-400 text-[10px] bg-black/40 px-1.5 py-0.5 rounded">w={edge.weight}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-3 flex items-center gap-4 text-xs">
+                        <span className="text-gray-400">Total MST Weight: <strong className="text-emerald-400 text-sm font-mono font-bold">{simulationResult.total_weight}</strong></span>
+                        <span className="text-gray-400">Edge Count: <strong className="text-gray-200">{simulationResult.mst_edges.length}</strong></span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Analysis & Complexity */}
+                <div className="bg-black/30 border border-gray-800 rounded-lg p-4 flex flex-col justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-gray-500 uppercase block mb-3">Theoretical Complexity and Performance</span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between border-b border-gray-800/60 pb-1.5">
+                        <span className="text-gray-400">Time Complexity (Big O)</span>
+                        <span className="text-gray-200 font-mono font-bold">{activeAlgoDetails.timeComplexity}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-gray-800/60 pb-1.5">
+                        <span className="text-gray-400">Space Complexity</span>
+                        <span className="text-gray-200 font-mono font-bold">{activeAlgoDetails.spaceComplexity}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-gray-800/60 pb-1.5">
+                        <span className="text-gray-400">Is Optimal Pathfinding</span>
+                        <span className="text-gray-200 font-semibold">{activeAlgoDetails.optimal}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 pt-3 border-t border-gray-800/80 text-[11px] text-gray-400 leading-relaxed">
+                    This execution has been tracked and analyzed. You can now use the ChatBot below to ask questions about how the steps were executed, or attempt the quiz in the sidebar to verify your understanding!
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Interactive Playback Control Bar */}
           <div className={styles.controlsPanel}>
             <div className={styles.buttonGroup}>
@@ -478,7 +641,7 @@ export function SimulatorPage() {
               ) : (
                 <>
                   <button 
-                    onClick={() => setIsPlaying(!isPlaying)}
+                    onClick={togglePlay}
                     className={styles.actionButton}
                   >
                     {isPlaying ? <Pause size={18} /> : <Play size={18} />}
