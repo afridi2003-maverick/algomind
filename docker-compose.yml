@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: algomind-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./algomind.db}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - ./backend:/app
+      - backend_data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: algomind-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+
+volumes:
+  backend_data:
