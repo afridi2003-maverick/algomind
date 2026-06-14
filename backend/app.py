@@ -1,3 +1,12 @@
+import os
+from dotenv import load_dotenv
+# Load .env file from the root directory
+dotenv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path=dotenv_path)
+else:
+    load_dotenv()
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -105,6 +114,18 @@ def generate_quiz(request: QuizGenerateRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+def ensure_student_exists(db_session, student_id: str):
+    """Ensure a student record exists in the database to satisfy foreign keys."""
+    student = db_session.query(db.models.Student).filter(db.models.Student.id == student_id).first()
+    if not student:
+        student = db.models.Student(
+            id=student_id,
+            email=f"{student_id}@example.com",
+            name=student_id.replace("_", " ").title()
+        )
+        db_session.add(student)
+        db_session.commit()
+
 @app.post("/api/quiz/submit")
 def submit_quiz(request: QuizSubmitRequest):
     """Grade a submitted quiz and store results."""
@@ -120,6 +141,7 @@ def submit_quiz(request: QuizSubmitRequest):
         if request.student_id:
             try:
                 db_session = SessionLocal()
+                ensure_student_exists(db_session, request.student_id)
                 attempt = db.models.QuizAttempt(
                     id=str(uuid.uuid4()),
                     student_id=request.student_id,
@@ -145,6 +167,7 @@ def update_progress(request: ProgressUpdateRequest):
     """Update student progress tracking."""
     try:
         db_session = SessionLocal()
+        ensure_student_exists(db_session, request.student_id)
         
         # Find or create progress record
         progress = db_session.query(db.models.StudentProgress).filter(
