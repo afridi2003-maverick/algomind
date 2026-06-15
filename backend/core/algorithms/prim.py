@@ -96,6 +96,9 @@ class Prim(BaseAlgorithm):
                 message=f"Added edge ({u}, {v}) with weight {weight} to the MST and marked node {v} as visited."
             )
             
+        # Format total weight to int if it has no decimal part, otherwise round to 2 decimals
+        formatted_weight = int(total_weight) if total_weight == int(total_weight) else round(total_weight, 2)
+
         # Finalization step
         self.add_step(
             "goal_reached",
@@ -105,12 +108,12 @@ class Prim(BaseAlgorithm):
                 "mst_edges": [{"source": x, "target": y, "weight": w} for x, y, w in mst_edges],
                 "candidate_edges": []
             },
-            message=f"Prim's algorithm completed! Spanning tree has {len(mst_edges)} edges with total weight {total_weight}."
+            message=f"Prim's algorithm completed! Spanning tree has {len(mst_edges)} edges with total weight {formatted_weight}."
         )
         
         return {
             "algorithm": "Prim",
             "mst_edges": [{"source": x, "target": y, "weight": w} for x, y, w in mst_edges],
-            "total_weight": total_weight,
+            "total_weight": formatted_weight,
             "steps": [step.to_dict() for step in self.steps]
         }

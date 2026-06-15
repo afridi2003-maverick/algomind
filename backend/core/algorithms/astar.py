@@ -33,24 +33,22 @@ class AStar(BaseAlgorithm):
         if not goal_node:
             goal_node = list(self.graph.nodes.keys())[-1]
             
-        # Compute dynamic scale for heuristic based on max edge weight and max graph diagonal
-        max_diagonal = 1.0
-        node_ids = list(self.graph.nodes.keys())
-        for i in range(len(node_ids)):
-            for j in range(i + 1, len(node_ids)):
-                n1 = self.graph.nodes[node_ids[i]]
-                n2 = self.graph.nodes[node_ids[j]]
-                d = math.hypot(n1.x - n2.x, n1.y - n2.y)
-                if d > max_diagonal:
-                    max_diagonal = d
-                    
-        max_weight = 1.0
-        for u in self.graph.nodes:
-            for v, w in self.graph.get_neighbors(u):
-                if w > max_weight:
-                    max_weight = w
-                    
-        scale = max_weight / max_diagonal
+        # Compute dynamic scale to guarantee admissibility: h(n) <= true remaining cost.
+        scale = 1.0
+        min_ratio = float('inf')
+        for u_id in self.graph.nodes:
+            u = self.graph.nodes[u_id]
+            for v_id, w in self.graph.get_neighbors(u_id):
+                v = self.graph.nodes[v_id]
+                phys_dist = math.hypot(u.x - v.x, u.y - v.y)
+                if phys_dist > 0.01:
+                    ratio = w / phys_dist
+                    if ratio < min_ratio:
+                        min_ratio = ratio
+        if min_ratio != float('inf') and min_ratio > 0:
+            scale = min_ratio
+        else:
+            scale = 0.01
         
         # Initialize
         g_score = {node_id: float('inf') for node_id in self.graph.nodes}

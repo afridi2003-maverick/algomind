@@ -41,7 +41,7 @@ chatbot_service = ChatbotService()
 class AlgorithmRequest(BaseModel):
     graph: Dict[str, Any]
     algorithm: str
-    start_node: str
+    start_node: Optional[str] = None
     goal_node: Optional[str] = None
 
 class ChatRequest(BaseModel):
@@ -74,6 +74,8 @@ def read_root():
 
 @app.post("/api/algorithm/execute")
 def execute_algorithm(request: AlgorithmRequest):
+    if request.algorithm != "Kruskal" and not request.start_node:
+        raise HTTPException(status_code=400, detail=f"Start node is required for {request.algorithm}")
     try:
         result = AlgorithmService.execute_algorithm(
             graph_dict=request.graph,
@@ -116,7 +118,12 @@ def generate_quiz(request: QuizGenerateRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 def ensure_student_exists(db_session, student_id: str):
-    """Ensure a student record exists in the database to satisfy foreign keys."""
+    """
+    Ensure a student record exists in the database to satisfy foreign keys.
+    NOTE: This is a placeholder mock stub for student authentication/identification in a development setup.
+    For a production deployment, this stub should be replaced by a secure integration with an authentication provider
+    (e.g., OAuth, Auth0, or custom session auth) to prevent unauthorized/fabricated database records.
+    """
     student = db_session.query(db.models.Student).filter(db.models.Student.id == student_id).first()
     if not student:
         student = db.models.Student(

@@ -57,9 +57,11 @@ RULES:
         """
         system_prompt = self.build_system_prompt(context)
         
+        model_name = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        
         if stream:
             with self.client.messages.stream(
-                model="claude-3-5-sonnet-20241022",
+                model=model_name,
                 max_tokens=1000,
                 system=system_prompt,
                 messages=messages
@@ -68,7 +70,7 @@ RULES:
                     yield text
         else:
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-20241022",
+                model=model_name,
                 max_tokens=1000,
                 system=system_prompt,
                 messages=messages

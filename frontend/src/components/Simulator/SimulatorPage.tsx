@@ -210,6 +210,23 @@ export function SimulatorPage() {
     }
   }, [error]);
 
+  // Synchronize and reset edge weight input value when entering edit or add edge flows
+  useEffect(() => {
+    if (pendingEdgeTarget) {
+      setEdgeWeightInput('1');
+    }
+  }, [pendingEdgeTarget]);
+
+  useEffect(() => {
+    if (editingEdge) {
+      const edge = edges.find(e => 
+        (e.source === editingEdge.source && e.target === editingEdge.target) ||
+        (!isDirected && e.source === editingEdge.target && e.target === editingEdge.source)
+      );
+      setEdgeWeightInput(edge ? edge.weight.toString() : '1');
+    }
+  }, [editingEdge, edges, isDirected]);
+
   // Move graph node during interactive drag
   const handleNodeDrag = useCallback((nodeId: string, x: number, y: number) => {
     setNodes(prev => prev.map(n => n.id === nodeId ? { ...n, x, y } : n));
@@ -237,9 +254,9 @@ export function SimulatorPage() {
       }
     }
 
-    // Identify final shortest path for Dijkstra, A*, or Bellman-Ford
+    // Identify final shortest path for BFS, DFS, Dijkstra, A*, or Bellman-Ford
     const isFinalStep = stepIndex === steps.length - 1;
-    const isPathAlgo = selectedAlgo === 'Dijkstra' || selectedAlgo === 'AStar' || selectedAlgo === 'BellmanFord';
+    const isPathAlgo = ['BFS', 'DFS', 'Dijkstra', 'AStar', 'BellmanFord'].includes(selectedAlgo);
     let pathNodes: Set<string> = new Set();
     let pathEdges: Set<string> = new Set();
 
@@ -272,7 +289,8 @@ export function SimulatorPage() {
       let distance = undefined;
       if (currentStep.state_snapshot?.distance && currentStep.state_snapshot.distance[n.id] !== undefined) {
         const val = currentStep.state_snapshot.distance[n.id];
-        distance = val === null || val === Infinity ? '∞' : val;
+        // Note: The backend converts Infinity to None/null for JSON compliance.
+        distance = (val === null || val === undefined) ? '∞' : val;
       }
 
       // Check heuristic updates
@@ -404,6 +422,10 @@ export function SimulatorPage() {
 
   const handleReset = () => {
     setIsPlaying(false);
+    if (playbackTimerRef.current) {
+      clearTimeout(playbackTimerRef.current);
+      playbackTimerRef.current = null;
+    }
     setSteps([]);
     setCurrentStepIndex(-1);
     setSimulationResult(null);
@@ -414,8 +436,24 @@ export function SimulatorPage() {
   const handleCanvasClick = (x: number, y: number) => {
     if (editorMode !== 'add_node') return;
     
-    // Add custom node on click
-    const nextLabel = String.fromCharCode(65 + nodes.length);
+    // Find next available character label (A-Z) safely to prevent duplicate ID collisions
+    let nextCharAscii = 65; // 'A'
+    const existingIds = new Set(nodes.map(n => n.id));
+    while (existingIds.has(String.fromCharCode(nextCharAscii)) && nextCharAscii <= 90) {
+      nextCharAscii++;
+    }
+    let nextLabel = "";
+    if (nextCharAscii <= 90) {
+      nextLabel = String.fromCharCode(nextCharAscii);
+    } else {
+      // Find a numbered label if A-Z are exhausted
+      let num = 1;
+      while (existingIds.has(`N${num}`)) {
+        num++;
+      }
+      nextLabel = `N${num}`;
+    }
+
     const newNode: VisualNode = {
       id: nextLabel,
       label: nextLabel,
@@ -459,9 +497,14 @@ export function SimulatorPage() {
   const handleConfirmEdgeWeight = () => {
     if (!firstSelectedNodeId || !pendingEdgeTarget) return;
     
-    const weight = parseInt(edgeWeightInput, 10);
-    if (isNaN(weight) || weight <= 0) {
-      setError('Edge weight must be a positive integer.');
+    const weight = parseFloat(edgeWeightInput);
+    const isBellman = selectedAlgo === 'BellmanFord';
+    const isInvalid = isBellman 
+      ? (isNaN(weight) || weight === 0) 
+      : (isNaN(weight) || weight <= 0);
+
+    if (isInvalid) {
+      setError(isBellman ? 'Edge weight must be a non-zero number.' : 'Edge weight must be a positive number.');
       setPendingEdgeTarget(null);
       setFirstSelectedNodeId(null);
       return;
@@ -498,9 +541,15 @@ export function SimulatorPage() {
 
   const handleConfirmEditEdgeWeight = () => {
     if (!editingEdge) return;
-    const weight = parseInt(edgeWeightInput, 10);
-    if (isNaN(weight) || weight <= 0) {
-      setError('Edge weight must be a positive integer.');
+    
+    const weight = parseFloat(edgeWeightInput);
+    const isBellman = selectedAlgo === 'BellmanFord';
+    const isInvalid = isBellman 
+      ? (isNaN(weight) || weight === 0) 
+      : (isNaN(weight) || weight <= 0);
+
+    if (isInvalid) {
+      setError(isBellman ? 'Edge weight must be a non-zero number.' : 'Edge weight must be a positive number.');
       setEditingEdge(null);
       return;
     }
@@ -630,7 +679,8 @@ export function SimulatorPage() {
               </span>
               <input
                 type="number"
-                min="1"
+                min={selectedAlgo === 'BellmanFord' ? '-99' : '0.1'}
+                step="any"
                 value={edgeWeightInput}
                 onChange={(e) => setEdgeWeightInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmEdgeWeight(); if (e.key === 'Escape') handleCancelEdgeWeight(); }}
@@ -655,7 +705,8 @@ export function SimulatorPage() {
               </span>
               <input
                 type="number"
-                min="1"
+                min={selectedAlgo === 'BellmanFord' ? '-99' : '0.1'}
+                step="any"
                 value={edgeWeightInput}
                 onChange={(e) => setEdgeWeightInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmEditEdgeWeight(); if (e.key === 'Escape') handleCancelEditEdgeWeight(); }}
@@ -829,9 +880,18 @@ export function SimulatorPage() {
                         <span className="text-gray-400">Space Complexity</span>
                         <span className="text-gray-200 font-mono font-bold">{activeAlgoDetails.spaceComplexity}</span>
                       </div>
-                      <div className="flex justify-between border-b border-gray-800/60 pb-1.5">
-                        <span className="text-gray-400">Is Optimal Pathfinding</span>
-                        <span className="text-gray-200 font-semibold">{activeAlgoDetails.optimal}</span>
+                      <div className="flex flex-col gap-1 border-b border-gray-800/60 pb-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Is Optimal Pathfinding</span>
+                          <span className="text-gray-200 font-semibold">{activeAlgoDetails.optimal}</span>
+                        </div>
+                        {['Dijkstra', 'AStar', 'BellmanFord'].includes(selectedAlgo) && (
+                          <p className="text-[10px] text-gray-500 italic mt-0.5 leading-relaxed text-right">
+                            {selectedAlgo === 'Dijkstra' && "*Guarantee holds only for graphs with non-negative edge weights."}
+                            {selectedAlgo === 'AStar' && "*Guarantee holds only when the heuristic function is admissible."}
+                            {selectedAlgo === 'BellmanFord' && "*Guarantee holds only in the absence of negative weight cycles."}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -939,7 +999,7 @@ export function SimulatorPage() {
           </div>
 
           {/* Simulation Settings */}
-          {selectedAlgo !== 'Kruskal' && selectedAlgo !== 'Prim' && (
+          {selectedAlgo !== 'Kruskal' && (
             <div>
               <h3 className={styles.sectionTitle}>Simulation Settings</h3>
               <div className="bg-gray-950/40 p-4 border border-gray-800/80 rounded-xl space-y-3">
@@ -970,6 +1030,11 @@ export function SimulatorPage() {
                         <option key={n.id} value={n.id}>Node {n.label}</option>
                       ))}
                     </select>
+                    {(selectedAlgo === 'BFS' || selectedAlgo === 'DFS') && (
+                      <p className="text-[10px] text-gray-500 mt-1 leading-relaxed">
+                        *Note: Setting a goal stops the traversal early once that node is reached.
+                      </p>
+                    )}
                   </div>
                 )}
                 {selectedAlgo === 'AStar' && (
@@ -1034,6 +1099,10 @@ export function SimulatorPage() {
               <div className="flex items-center gap-2">
                 <span className="w-3.5 h-3.5 rounded bg-emerald-900 border border-emerald-500 block"></span>
                 <span>Visited</span>
+              </div>
+              <div className="flex items-center gap-2 col-span-2 border-t border-gray-800/60 pt-2 mt-1">
+                <span className="w-3.5 h-3.5 rounded bg-amber-900 border border-yellow-500 block animate-pulse"></span>
+                <span>Shortest Path / MST Edge (Goal)</span>
               </div>
             </div>
           </div>

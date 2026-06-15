@@ -41,7 +41,7 @@ export default function Debugger({
   let pqElements: { node: string; cost: number; label: string }[] = [];
   if (algorithm === 'Dijkstra' || algorithm === 'AStar') {
     pqElements = nodes
-      .filter(n => !visitedSet.has(n.id) && distances[n.id] !== undefined && distances[n.id] !== null && distances[n.id] !== Infinity && distances[n.id] !== '∞')
+      .filter(n => !visitedSet.has(n.id) && distances[n.id] !== undefined && distances[n.id] !== null && distances[n.id] !== '∞')
       .map(n => {
         const gVal = typeof distances[n.id] === 'number' ? distances[n.id] : parseInt(distances[n.id], 10) || 0;
         let cost = gVal;
