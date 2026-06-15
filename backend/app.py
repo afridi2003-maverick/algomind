@@ -24,10 +24,11 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="AlgoMind API")
 
-# Setup CORS
+# Setup CORS — read allowed origins from environment variable for deployment flexibility
+cors_origins = os.getenv("CORS_ORIGINS", os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")).split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[origin.strip() for origin in cors_origins],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -140,19 +141,18 @@ def submit_quiz(request: QuizSubmitRequest):
         # Store quiz attempt in database if student_id provided
         if request.student_id:
             try:
-                db_session = SessionLocal()
-                ensure_student_exists(db_session, request.student_id)
-                attempt = db.models.QuizAttempt(
-                    id=str(uuid.uuid4()),
-                    student_id=request.student_id,
-                    algorithm=request.algorithm,
-                    score=result["score"],
-                    total_questions=result["total_questions"],
-                    correct_answers=result["correct_answers"]
-                )
-                db_session.add(attempt)
-                db_session.commit()
-                db_session.close()
+                with SessionLocal() as db_session:
+                    ensure_student_exists(db_session, request.student_id)
+                    attempt = db.models.QuizAttempt(
+                        id=str(uuid.uuid4()),
+                        student_id=request.student_id,
+                        algorithm=request.algorithm,
+                        score=result["score"],
+                        total_questions=result["total_questions"],
+                        correct_answers=result["correct_answers"]
+                    )
+                    db_session.add(attempt)
+                    db_session.commit()
             except Exception as db_err:
                 print(f"Warning: could not save quiz attempt: {db_err}")
         
@@ -166,32 +166,30 @@ def submit_quiz(request: QuizSubmitRequest):
 def update_progress(request: ProgressUpdateRequest):
     """Update student progress tracking."""
     try:
-        db_session = SessionLocal()
-        ensure_student_exists(db_session, request.student_id)
-        
-        # Find or create progress record
-        progress = db_session.query(db.models.StudentProgress).filter(
-            db.models.StudentProgress.student_id == request.student_id
-        ).first()
-        
-        if not progress:
-            progress = db.models.StudentProgress(
-                id=str(uuid.uuid4()),
-                student_id=request.student_id,
-                algorithms_started=request.algorithms_started or [],
-                algorithms_mastered=request.algorithms_mastered or []
-            )
-            db_session.add(progress)
-        else:
-            if request.algorithms_started is not None:
-                progress.algorithms_started = request.algorithms_started
-            if request.algorithms_mastered is not None:
-                progress.algorithms_mastered = request.algorithms_mastered
-        
-        db_session.commit()
-        db_session.close()
-        
-        return {"status": "ok", "student_id": request.student_id}
+        with SessionLocal() as db_session:
+            ensure_student_exists(db_session, request.student_id)
+            
+            # Find or create progress record
+            progress = db_session.query(db.models.StudentProgress).filter(
+                db.models.StudentProgress.student_id == request.student_id
+            ).first()
+            
+            if not progress:
+                progress = db.models.StudentProgress(
+                    id=str(uuid.uuid4()),
+                    student_id=request.student_id,
+                    algorithms_started=request.algorithms_started or [],
+                    algorithms_mastered=request.algorithms_mastered or []
+                )
+                db_session.add(progress)
+            else:
+                if request.algorithms_started is not None:
+                    progress.algorithms_started = request.algorithms_started
+                if request.algorithms_mastered is not None:
+                    progress.algorithms_mastered = request.algorithms_mastered
+            
+            db_session.commit()
+            return {"status": "ok", "student_id": request.student_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -199,22 +197,19 @@ def update_progress(request: ProgressUpdateRequest):
 def get_progress(student_id: str):
     """Get student progress data."""
     try:
-        db_session = SessionLocal()
-        progress = db_session.query(db.models.StudentProgress).filter(
-            db.models.StudentProgress.student_id == student_id
-        ).first()
-        
-        quiz_attempts = db_session.query(db.models.QuizAttempt).filter(
-            db.models.QuizAttempt.student_id == student_id
-        ).all()
-        db_session.close()
-        
-        return {
-            "student_id": student_id,
-            "algorithms_started": progress.algorithms_started if progress else [],
-            "algorithms_mastered": progress.algorithms_mastered if progress else [],
-            "total_time_spent": progress.total_time_spent if progress else 0,
-            "quiz_attempts": [
+        with SessionLocal() as db_session:
+            progress = db_session.query(db.models.StudentProgress).filter(
+                db.models.StudentProgress.student_id == student_id
+            ).first()
+            
+            quiz_attempts = db_session.query(db.models.QuizAttempt).filter(
+                db.models.QuizAttempt.student_id == student_id
+            ).all()
+            
+            started = list(progress.algorithms_started) if (progress and progress.algorithms_started) else []
+            mastered = list(progress.algorithms_mastered) if (progress and progress.algorithms_mastered) else []
+            time_spent = progress.total_time_spent if progress else 0
+            attempts = [
                 {
                     "algorithm": qa.algorithm,
                     "score": qa.score,
@@ -224,6 +219,13 @@ def get_progress(student_id: str):
                 }
                 for qa in quiz_attempts
             ]
-        }
+            
+            return {
+                "student_id": student_id,
+                "algorithms_started": started,
+                "algorithms_mastered": mastered,
+                "total_time_spent": time_spent,
+                "quiz_attempts": attempts
+            }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

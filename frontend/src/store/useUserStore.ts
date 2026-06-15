@@ -6,6 +6,44 @@ export interface User {
   email: string;
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
+/**
+ * Generate or retrieve a persistent student identity from localStorage.
+ * Each browser/device gets a unique student ID on first visit.
+ */
+function getOrCreateUser(): User {
+  if (typeof window === 'undefined') {
+    // SSR fallback
+    return { id: 'student_ssr', name: 'Student', email: 'student@algomind.app' };
+  }
+  
+  try {
+    const stored = localStorage.getItem('algomind_user');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (parsed.id && parsed.name && parsed.email) {
+        return parsed;
+      }
+    }
+  } catch { /* corrupt localStorage, regenerate */ }
+  
+  // Generate a new unique identity
+  const uuid = crypto.randomUUID();
+  const shortId = uuid.slice(0, 8);
+  const newUser: User = {
+    id: `student_${shortId}`,
+    name: 'Student',
+    email: `student_${shortId}@algomind.app`
+  };
+  
+  try {
+    localStorage.setItem('algomind_user', JSON.stringify(newUser));
+  } catch { /* localStorage not available */ }
+  
+  return newUser;
+}
+
 interface UserState {
   user: User | null;
   startedAlgorithms: string[];
@@ -20,30 +58,41 @@ interface UserState {
 }
 
 export const useUserStore = create<UserState>((set, get) => ({
-  // Default mock user to ensure high-quality first-impression experience
-  user: {
-    id: 'student_1',
-    name: 'Alex Turing',
-    email: 'alex@university.edu'
-  },
-  startedAlgorithms: ['BFS', 'Dijkstra'],
+  // Generate unique user per browser on first visit
+  user: getOrCreateUser(),
+  startedAlgorithms: [],
   masteredAlgorithms: [],
   isLoading: false,
   error: null,
   
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    set({ user });
+    if (user && typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('algomind_user', JSON.stringify(user));
+      } catch { /* localStorage not available */ }
+    }
+  },
   
   login: async (email: string, name: string) => {
     set({ isLoading: true, error: null });
     try {
-      // Setup a simulated API call to register/login on the backend if needed
-      const simulatedUser: User = {
-        id: `student_${Math.random().toString(36).substr(2, 9)}`,
+      const uuid = crypto.randomUUID();
+      const shortId = uuid.slice(0, 8);
+      const newUser: User = {
+        id: `student_${shortId}`,
         name,
         email,
       };
+      
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('algomind_user', JSON.stringify(newUser));
+        } catch { /* localStorage not available */ }
+      }
+      
       set({
-        user: simulatedUser,
+        user: newUser,
         startedAlgorithms: [],
         masteredAlgorithms: [],
         isLoading: false
@@ -54,6 +103,9 @@ export const useUserStore = create<UserState>((set, get) => ({
   },
   
   logout: () => {
+    if (typeof window !== 'undefined') {
+      try { localStorage.removeItem('algomind_user'); } catch { /* */ }
+    }
     set({ user: null, startedAlgorithms: [], masteredAlgorithms: [], error: null });
   },
   
@@ -63,10 +115,10 @@ export const useUserStore = create<UserState>((set, get) => ({
       const updated = [...startedAlgorithms, algo];
       set({ startedAlgorithms: updated });
       
-      // Optionally sync to backend DB if logged in
+      // Sync to backend DB if logged in
       if (user) {
         try {
-          await fetch('http://127.0.0.1:8000/api/student/progress', {
+          await fetch(`${API_URL}/api/student/progress`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -87,10 +139,10 @@ export const useUserStore = create<UserState>((set, get) => ({
       const updated = [...masteredAlgorithms, algo];
       set({ masteredAlgorithms: updated });
       
-      // Optionally sync to backend DB if logged in
+      // Sync to backend DB if logged in
       if (user) {
         try {
-          await fetch('http://127.0.0.1:8000/api/student/progress', {
+          await fetch(`${API_URL}/api/student/progress`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

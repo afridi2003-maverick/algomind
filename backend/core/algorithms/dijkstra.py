@@ -31,6 +31,7 @@ class Dijkstra(BaseAlgorithm):
             "initialize",
             node=start_node,
             frontier=[start_node],
+            visited=visited.copy(),
             message="Dijkstra initialized"
         )
         
@@ -45,6 +46,7 @@ class Dijkstra(BaseAlgorithm):
             self.add_step(
                 "visit_node",
                 node=current,
+                visited=visited.copy(),
                 state_snapshot={"distance": distance.copy()},
                 message=f"Processing node {current} with distance {current_dist}"
             )
@@ -53,6 +55,7 @@ class Dijkstra(BaseAlgorithm):
                 self.add_step(
                     "goal_reached",
                     node=goal_node,
+                    visited=visited.copy(),
                     message=f"Reached goal {goal_node} with distance {distance[goal_node]}"
                 )
                 break
@@ -70,6 +73,7 @@ class Dijkstra(BaseAlgorithm):
                         "relax_edge",
                         edge=(current, neighbor),
                         nodes_involved=[current, neighbor],
+                        visited=visited.copy(),
                         state_snapshot={
                             "distance": distance.copy(),
                             "previous": previous.copy()
@@ -80,6 +84,7 @@ class Dijkstra(BaseAlgorithm):
                     self.add_step(
                         "skip_edge",
                         edge=(current, neighbor),
+                        visited=visited.copy(),
                         message=f"Edge ({current}, {neighbor}) not improved"
                     )
         

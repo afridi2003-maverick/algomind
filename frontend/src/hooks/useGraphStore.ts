@@ -33,7 +33,7 @@ export const useGraphStore = create<GraphState>((set) => ({
   isDirected: false,
   
   addNode: (node) => set((state) => ({
-    nodes: [...state.nodes, { ...node, id: `n${Date.now()}` }]
+    nodes: [...state.nodes, { ...node, id: `n${crypto.randomUUID().slice(0, 8)}` }]
   })),
   
   updateNodePosition: (id, x, y) => set((state) => ({

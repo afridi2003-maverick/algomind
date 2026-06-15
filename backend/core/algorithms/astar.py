@@ -6,15 +6,14 @@ from .base import BaseAlgorithm
 class AStar(BaseAlgorithm):
     """A* Heuristic Search shortest path algorithm."""
     
-    def calculate_heuristic(self, node_id: str, goal_id: str) -> float:
+    def calculate_heuristic(self, node_id: str, goal_id: str, scale: float = 0.02) -> float:
         """Calculate Euclidean distance heuristic between two nodes, scaled to match small weights."""
         node = self.graph.nodes.get(node_id)
         goal = self.graph.nodes.get(goal_id)
         if not node or not goal:
             return 0.0
-        # Euclidean distance divided by 50 to keep values under 15, matching edge weights
         dist = math.hypot(node.x - goal.x, node.y - goal.y)
-        return round(dist / 50, 1)
+        return round(dist * scale, 1)
 
     def execute(self, start_node: str, goal_node: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -34,12 +33,31 @@ class AStar(BaseAlgorithm):
         if not goal_node:
             goal_node = list(self.graph.nodes.keys())[-1]
             
+        # Compute dynamic scale for heuristic based on max edge weight and max graph diagonal
+        max_diagonal = 1.0
+        node_ids = list(self.graph.nodes.keys())
+        for i in range(len(node_ids)):
+            for j in range(i + 1, len(node_ids)):
+                n1 = self.graph.nodes[node_ids[i]]
+                n2 = self.graph.nodes[node_ids[j]]
+                d = math.hypot(n1.x - n2.x, n1.y - n2.y)
+                if d > max_diagonal:
+                    max_diagonal = d
+                    
+        max_weight = 1.0
+        for u in self.graph.nodes:
+            for v, w in self.graph.get_neighbors(u):
+                if w > max_weight:
+                    max_weight = w
+                    
+        scale = max_weight / max_diagonal
+        
         # Initialize
         g_score = {node_id: float('inf') for node_id in self.graph.nodes}
         g_score[start_node] = 0.0
         
         heuristics = {
-            node_id: self.calculate_heuristic(node_id, goal_node)
+            node_id: self.calculate_heuristic(node_id, goal_node, scale)
             for node_id in self.graph.nodes
         }
         
@@ -56,6 +74,7 @@ class AStar(BaseAlgorithm):
             "initialize",
             node=start_node,
             frontier=[start_node],
+            visited=visited.copy(),
             state_snapshot={
                 "distance": g_score.copy(),
                 "heuristics": heuristics.copy()
@@ -74,6 +93,7 @@ class AStar(BaseAlgorithm):
             self.add_step(
                 "visit_node",
                 node=current,
+                visited=visited.copy(),
                 state_snapshot={
                     "distance": g_score.copy(),
                     "heuristics": heuristics.copy()
@@ -85,6 +105,7 @@ class AStar(BaseAlgorithm):
                 self.add_step(
                     "goal_reached",
                     node=goal_node,
+                    visited=visited.copy(),
                     state_snapshot={
                         "distance": g_score.copy(),
                         "heuristics": heuristics.copy()
@@ -107,6 +128,7 @@ class AStar(BaseAlgorithm):
                         "relax_edge",
                         edge=(current, neighbor),
                         nodes_involved=[current, neighbor],
+                        visited=visited.copy(),
                         state_snapshot={
                             "distance": g_score.copy(),
                             "previous": previous.copy(),
@@ -118,6 +140,7 @@ class AStar(BaseAlgorithm):
                     self.add_step(
                         "skip_edge",
                         edge=(current, neighbor),
+                        visited=visited.copy(),
                         message=f"Edge ({current}, {neighbor}) not improved (g={tentative_g} >= current g={g_score[neighbor]})"
                     )
                     

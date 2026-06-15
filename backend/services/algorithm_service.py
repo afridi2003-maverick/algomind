@@ -6,6 +6,7 @@ from core.algorithms.dijkstra import Dijkstra
 from core.algorithms.astar import AStar
 from core.algorithms.kruskal import Kruskal
 from core.algorithms.bellman_ford import BellmanFord
+from core.algorithms.prim import Prim
 from core.complexity.analyzer import ComplexityAnalyzer
 
 def make_json_compliant(data: Any) -> Any:
@@ -33,6 +34,7 @@ class AlgorithmService:
         "AStar": AStar,
         "Kruskal": Kruskal,
         "BellmanFord": BellmanFord,
+        "Prim": Prim,
     }
     
     @staticmethod

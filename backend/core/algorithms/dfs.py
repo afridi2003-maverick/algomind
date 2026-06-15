@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, List
 from .base import BaseAlgorithm
 
 class DFS(BaseAlgorithm):
@@ -20,7 +20,8 @@ class DFS(BaseAlgorithm):
             
         # Initialize
         stack = [start_node]
-        visited = {start_node}
+        visited: Set[str] = set()
+        visit_order: List[str] = []
         distance = {node_id: float('inf') for node_id in self.graph.nodes}
         distance[start_node] = 0
         parent = {node_id: None for node_id in self.graph.nodes}
@@ -29,18 +30,25 @@ class DFS(BaseAlgorithm):
             "initialize",
             node=start_node,
             frontier=list(stack),
-            visited=visited,
+            visited=visited.copy(),
             message=f"Starting DFS from {start_node}"
         )
         
         while stack:
             current = stack.pop()
             
+            # Skip if already visited (mark visited on pop, not on push)
+            if current in visited:
+                continue
+            
+            visited.add(current)
+            visit_order.append(current)
+            
             self.add_step(
                 "visit_node",
                 node=current,
                 frontier=list(stack),
-                visited=visited,
+                visited=visited.copy(),
                 message=f"Visiting node {current}"
             )
             
@@ -55,11 +63,12 @@ class DFS(BaseAlgorithm):
             # Explore neighbors in alphabetical order
             # Sorting reverse=True so alphabetical node is pushed last and popped first (LIFO)
             neighbors = sorted(self.graph.get_neighbors(current), key=lambda x: x[0], reverse=True)
-            for neighbor, _ in neighbors:
+            for neighbor, weight in neighbors:
                 if neighbor not in visited:
-                    visited.add(neighbor)
-                    distance[neighbor] = distance[current] + 1
-                    parent[neighbor] = current
+                    # Update distance/parent if this is the first time we can reach neighbor
+                    if distance[neighbor] == float('inf'):
+                        distance[neighbor] = distance[current] + 1
+                        parent[neighbor] = current
                     stack.append(neighbor)
                     
                     self.add_step(
@@ -67,7 +76,7 @@ class DFS(BaseAlgorithm):
                         node=neighbor,
                         nodes_involved=[current, neighbor],
                         frontier=list(stack),
-                        visited=visited,
+                        visited=visited.copy(),
                         state_snapshot={
                             "distance": distance.copy(),
                             "parent": parent.copy()
@@ -77,7 +86,7 @@ class DFS(BaseAlgorithm):
                     
         return {
             "algorithm": "DFS",
-            "visited_order": list(visited),
+            "visited_order": visit_order,
             "distance": distance,
             "parent_tree": parent,
             "steps": [step.to_dict() for step in self.steps]

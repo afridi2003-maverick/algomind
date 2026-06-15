@@ -27,11 +27,16 @@ export default function ChatBot({ algorithm, graphSize, currentStep }: ChatBotPr
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Update welcome message when algorithm changes
+  const prevAlgo = useRef(algorithm);
+  // Append context message when algorithm changes
   useEffect(() => {
-    setMessages([
-      { role: 'assistant', content: `Hi! 👋 I'm AlgoMind, your AI tutor. I can help you understand **${algorithm}** and other graph algorithms. Ask me anything!` }
-    ]);
+    if (prevAlgo.current !== algorithm) {
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: `You've switched to **${algorithm}**. Feel free to ask questions about it!` }
+      ]);
+      prevAlgo.current = algorithm;
+    }
   }, [algorithm]);
 
   const handleSend = useCallback(async () => {
@@ -57,7 +62,8 @@ export default function ChatBot({ algorithm, graphSize, currentStep }: ChatBotPr
         progress: 'In simulation'
       };
 
-      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const response = await fetch(`${apiBaseUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

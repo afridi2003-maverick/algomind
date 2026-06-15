@@ -1,9 +1,9 @@
 "use client";
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { CheckCircle, XCircle, Award, RotateCcw, Loader2, BookOpen } from 'lucide-react';
 import axios from 'axios';
 
-type AlgoKey = 'BFS' | 'DFS' | 'Dijkstra' | 'AStar' | 'Kruskal' | 'BellmanFord';
+type AlgoKey = 'BFS' | 'DFS' | 'Dijkstra' | 'AStar' | 'Kruskal' | 'BellmanFord' | 'Prim';
 
 interface QuizQuestion {
   id: string;
@@ -52,18 +52,62 @@ export default function QuizModule({ algorithm, studentId, onQuizComplete }: Qui
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+
+  // Countdown Timer Effect
+  useEffect(() => {
+    if (timeLeft === null || result) return;
+    
+    if (timeLeft <= 0) {
+      // Auto-submit when timer hits 0
+      const finalAnswers = answers.map(a => a === null ? -1 : a);
+      
+      const autoSubmit = async () => {
+        setSubmitting(true);
+        setError(null);
+        try {
+          const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+          const response = await axios.post(`${apiBaseUrl}/api/quiz/submit`, {
+            quiz_id: quiz!.quiz_id,
+            algorithm: quiz!.algorithm,
+            questions: quiz!.questions,
+            answers: finalAnswers,
+            student_id: studentId || null
+          });
+          setResult(response.data);
+          if (onQuizComplete) onQuizComplete(response.data);
+        } catch (err: any) {
+          setError(err.response?.data?.detail || 'Failed to auto-submit quiz.');
+        } finally {
+          setTimeLeft(null);
+          setSubmitting(false);
+        }
+      };
+      
+      autoSubmit();
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setTimeLeft(prev => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [timeLeft, result, answers, quiz, studentId, onQuizComplete]);
 
   const handleGenerateQuiz = useCallback(async () => {
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/quiz/generate', {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const response = await axios.post(`${apiBaseUrl}/api/quiz/generate`, {
         algorithm,
         num_questions: 5
       });
       setQuiz(response.data);
       setAnswers(new Array(response.data.total_questions).fill(null));
+      setTimeLeft(60); // 60-second limit
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to generate quiz.');
     } finally {
@@ -89,7 +133,8 @@ export default function QuizModule({ algorithm, studentId, onQuizComplete }: Qui
     setSubmitting(true);
     setError(null);
     try {
-      const response = await axios.post('http://127.0.0.1:8000/api/quiz/submit', {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      const response = await axios.post(`${apiBaseUrl}/api/quiz/submit`, {
         quiz_id: quiz.quiz_id,
         algorithm: quiz.algorithm,
         questions: quiz.questions,
@@ -110,6 +155,7 @@ export default function QuizModule({ algorithm, studentId, onQuizComplete }: Qui
     setAnswers([]);
     setResult(null);
     setError(null);
+    setTimeLeft(null);
   };
 
   // ─── Not Started ───
@@ -196,7 +242,6 @@ export default function QuizModule({ algorithm, studentId, onQuizComplete }: Qui
     );
   }
 
-  // ─── Active Quiz ───
   return (
     <div className="bg-gray-900/50 border border-gray-800/80 rounded-xl p-6 backdrop-blur space-y-6">
       <div className="flex items-center justify-between">
@@ -204,10 +249,32 @@ export default function QuizModule({ algorithm, studentId, onQuizComplete }: Qui
           <BookOpen size={20} className="text-teal-400" />
           {algorithm} Quiz
         </h3>
-        <span className="text-xs font-mono text-gray-500 bg-black/40 px-2 py-1 rounded border border-gray-800">
-          {answers.filter(a => a !== null).length}/{quiz.total_questions} answered
-        </span>
+        <div className="flex items-center gap-3">
+          {timeLeft !== null && (
+            <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded border transition-colors ${
+              timeLeft <= 10 
+                ? 'bg-rose-500/20 text-rose-400 border-rose-500/40 animate-pulse' 
+                : 'bg-teal-500/10 text-teal-400 border-teal-500/20'
+            }`}>
+              ⏱ {timeLeft}s
+            </span>
+          )}
+          <span className="text-xs font-mono text-gray-500 bg-black/40 px-2 py-1 rounded border border-gray-800">
+            {answers.filter(a => a !== null).length}/{quiz.total_questions} answered
+          </span>
+        </div>
       </div>
+
+      {timeLeft !== null && (
+        <div className="h-1 w-full bg-gray-800 rounded-full overflow-hidden">
+          <div 
+            className={`h-full transition-all duration-1000 ease-linear ${
+              timeLeft <= 10 ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-teal-500'
+            }`}
+            style={{ width: `${(timeLeft / 60) * 100}%` }}
+          />
+        </div>
+      )}
 
       <div className="space-y-5">
         {quiz.questions.map((q, i) => (

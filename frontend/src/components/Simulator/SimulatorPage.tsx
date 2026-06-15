@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { Play, Pause, RotateCcw, ArrowRight, Info, AlertTriangle, FastForward, CheckCircle } from 'lucide-react';
+import { Play, Pause, RotateCcw, ArrowRight, ArrowLeft, Info, AlertTriangle, FastForward, CheckCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import styles from './SimulatorPage.module.css';
 import CanvasVisualization, { VisualNode, VisualEdge } from './CanvasVisualization';
 import axios from 'axios';
@@ -9,6 +9,8 @@ import { useUserStore } from '@/store/useUserStore';
 import Debugger from './Debugger';
 import QuizModule from './QuizModule';
 import ChatBot from './ChatBot';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
 const INITIAL_NODES: VisualNode[] = [
   { id: 'A', label: 'A', x: 150, y: 250, state: 'unvisited' },
@@ -30,7 +32,7 @@ const INITIAL_EDGES: VisualEdge[] = [
   { source: 'E', target: 'F', weight: 2, state: 'unvisited' },
 ];
 
-type AlgoKey = 'BFS' | 'DFS' | 'Dijkstra' | 'AStar' | 'Kruskal' | 'BellmanFord';
+type AlgoKey = 'BFS' | 'DFS' | 'Dijkstra' | 'AStar' | 'Kruskal' | 'BellmanFord' | 'Prim';
 
 const ALGORITHM_DETAILS: Record<AlgoKey, { name: string; timeComplexity: string; spaceComplexity: string; optimal: string; description: string }> = {
   BFS: {
@@ -74,6 +76,13 @@ const ALGORITHM_DETAILS: Record<AlgoKey, { name: string; timeComplexity: string;
     spaceComplexity: 'O(V)',
     optimal: 'Yes (Handles Negative Weights)',
     description: 'Finds shortest paths from a single source, even with negative edge weights. Detects negative weight cycles in V iterations.',
+  },
+  Prim: {
+    name: "Prim's MST",
+    timeComplexity: 'O(E log V)',
+    spaceComplexity: 'O(V)',
+    optimal: 'Yes (Minimum Spanning Tree)',
+    description: "Finds the Minimum Spanning Tree by growing a tree from a start vertex, repeatedly adding the cheapest edge to an unvisited node.",
   }
 };
 
@@ -90,12 +99,32 @@ export function SimulatorPage() {
   const [error, setError] = useState<string | null>(null);
   const [simulationResult, setSimulationResult] = useState<any | null>(null);
 
+  // Dynamic start/goal node IDs — computed when simulation starts
+  const [startNodeId, setStartNodeId] = useState<string | null>(null);
+  const [goalNodeId, setGoalNodeId] = useState<string | null>(null);
+
+  const activeStartId = startNodeId && nodes.some(n => n.id === startNodeId)
+    ? startNodeId
+    : (nodes[0]?.id || null);
+
+  const activeGoalId = goalNodeId && nodes.some(n => n.id === goalNodeId)
+    ? goalNodeId
+    : (selectedAlgo === 'AStar' && nodes.length > 0 ? nodes[nodes.length - 1].id : null);
+
+
   // Graph Editor Mode States
   const [editorMode, setEditorMode] = useState<'select' | 'add_node' | 'add_edge' | 'delete'>('select');
   const [firstSelectedNodeId, setFirstSelectedNodeId] = useState<string | null>(null);
 
-  // Hook into our Zustand User Store
+  // Inline edge weight input (replaces prompt())
+  const [pendingEdgeTarget, setPendingEdgeTarget] = useState<string | null>(null);
+  const [editingEdge, setEditingEdge] = useState<{ source: string; target: string } | null>(null);
+  const [edgeWeightInput, setEdgeWeightInput] = useState('1');
+
+  // Hook into our Zustand User Store (proper hook subscriptions, not getState())
   const trackAlgorithmStart = useUserStore(state => state.trackAlgorithmStart);
+  const trackAlgorithmMastered = useUserStore(state => state.trackAlgorithmMastered);
+  const userId = useUserStore(state => state.user?.id);
 
   const playbackTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -115,9 +144,18 @@ export function SimulatorPage() {
       // Track start in student userStore
       trackAlgorithmStart(selectedAlgo);
 
-      // Find suitable start and goal nodes dynamically
-      const startNodeObj = nodes.find(n => n.id === 'A') || nodes[0];
-      const goalNodeObj = nodes.find(n => n.id === 'F') || nodes[nodes.length - 1];
+      const startNode = activeStartId;
+      const goalNode = activeGoalId;
+
+      if (!startNode) {
+        setError('Please select a valid start node.');
+        setLoading(false);
+        return;
+      }
+
+      // Store the chosen start/goal in state for use in applyStep and results
+      setStartNodeId(startNode);
+      setGoalNodeId(goalNode);
 
       // Save graph to localStorage for persistence
       try {
@@ -127,15 +165,15 @@ export function SimulatorPage() {
         }));
       } catch (e) { /* localStorage not available */ }
 
-      const response = await axios.post('http://127.0.0.1:8000/api/algorithm/execute', {
+      const response = await axios.post(`${API_URL}/api/algorithm/execute`, {
         graph: {
           nodes: nodes.map(n => ({ id: n.id, label: n.label, x: n.x, y: n.y })),
           edges: edges.map(e => ({ source: e.source, target: e.target, weight: e.weight })),
           is_directed: isDirected
         },
         algorithm: selectedAlgo,
-        start_node: startNodeObj.id,
-        goal_node: goalNodeObj ? goalNodeObj.id : null
+        start_node: startNode,
+        goal_node: goalNode
       });
 
       setSteps(response.data.steps);
@@ -186,22 +224,43 @@ export function SimulatorPage() {
     const activeNode = currentStep.node;
     const activeEdge = currentStep.edge; // tuple e.g., ['A', 'B']
 
-    const goalNodeObj = nodes.find(n => n.id === 'F') || nodes[nodes.length - 1];
+    // Use dynamic goal node from state instead of hardcoded 'F'
+    const currentGoalId = activeGoalId;
 
-    // For Kruskal: build set of MST edges from state_snapshot
+    // For Kruskal & Prim: build set of MST edges from state_snapshot
     const mstEdges: Set<string> = new Set();
-    if (selectedAlgo === 'Kruskal' && currentStep.state_snapshot?.mst_edges) {
+    const isMstAlgo = selectedAlgo === 'Kruskal' || selectedAlgo === 'Prim';
+    if (isMstAlgo && currentStep.state_snapshot?.mst_edges) {
       for (const me of currentStep.state_snapshot.mst_edges) {
         mstEdges.add(`${me.source}-${me.target}`);
         mstEdges.add(`${me.target}-${me.source}`);
       }
     }
 
+    // Identify final shortest path for Dijkstra, A*, or Bellman-Ford
+    const isFinalStep = stepIndex === steps.length - 1;
+    const isPathAlgo = selectedAlgo === 'Dijkstra' || selectedAlgo === 'AStar' || selectedAlgo === 'BellmanFord';
+    let pathNodes: Set<string> = new Set();
+    let pathEdges: Set<string> = new Set();
+
+    if (isFinalStep && isPathAlgo && simulationResult) {
+      const path = getShortestPath();
+      if (path.length > 0) {
+        pathNodes = new Set(path);
+        for (let i = 0; i < path.length - 1; i++) {
+          pathEdges.add(`${path[i]}-${path[i+1]}`);
+          pathEdges.add(`${path[i+1]}-${path[i]}`);
+        }
+      }
+    }
+
     setNodes(prev => prev.map(n => {
       let state: VisualNode['state'] = 'unvisited';
-      if (n.id === activeNode) {
+      if (pathNodes.has(n.id)) {
+        state = 'goal';
+      } else if (n.id === activeNode) {
         state = 'visiting';
-      } else if (selectedAlgo !== 'Kruskal' && goalNodeObj && n.id === goalNodeObj.id && visitedSet.has(goalNodeObj.id)) {
+      } else if (!isMstAlgo && currentGoalId && n.id === currentGoalId && visitedSet.has(currentGoalId)) {
         state = 'goal';
       } else if (visitedSet.has(n.id)) {
         state = 'visited';
@@ -228,8 +287,8 @@ export function SimulatorPage() {
     setEdges(prev => prev.map(e => {
       let state: VisualEdge['state'] = 'unvisited';
       
-      if (selectedAlgo === 'Kruskal') {
-        // For Kruskal: highlight MST edges as visited, active edge as visiting
+      if (selectedAlgo === 'Kruskal' || selectedAlgo === 'Prim') {
+        // For Kruskal & Prim: highlight MST edges as visited, active edge as visiting
         if (activeEdge && ((activeEdge[0] === e.source && activeEdge[1] === e.target) || 
             (activeEdge[0] === e.target && activeEdge[1] === e.source))) {
           state = 'visiting';
@@ -237,8 +296,10 @@ export function SimulatorPage() {
           state = 'visited';
         }
       } else {
-        // Standard logic for path-based algorithms
-        if (activeEdge && ((activeEdge[0] === e.source && activeEdge[1] === e.target) || 
+        // Path highlighting on final step
+        if (pathEdges.has(`${e.source}-${e.target}`)) {
+          state = 'goal';
+        } else if (activeEdge && ((activeEdge[0] === e.source && activeEdge[1] === e.target) || 
             (!isDirected && activeEdge[0] === e.target && activeEdge[1] === e.source))) {
           state = 'visiting';
         } else if (visitedSet.has(e.source) && visitedSet.has(e.target)) {
@@ -249,7 +310,7 @@ export function SimulatorPage() {
       }
       return { ...e, state };
     }));
-  }, [steps, isDirected, nodes, selectedAlgo]);
+  }, [steps, isDirected, activeGoalId, selectedAlgo, simulationResult, activeStartId]);
 
   // Handle Playback Interval Timer
   useEffect(() => {
@@ -275,23 +336,37 @@ export function SimulatorPage() {
     }
   };
 
+  const handlePrevStep = () => {
+    if (currentStepIndex > 0) {
+      setIsPlaying(false);
+      setCurrentStepIndex(prev => prev - 1);
+    }
+  };
+
+  const handleNextStep = () => {
+    if (currentStepIndex < steps.length - 1) {
+      setIsPlaying(false);
+      setCurrentStepIndex(prev => prev + 1);
+    }
+  };
+
   const getShortestPath = () => {
     if (!simulationResult) return [];
     const prevMap = simulationResult.previous || simulationResult.parent_tree || {};
-    const startNodeObj = nodes.find(n => n.id === 'A') || nodes[0];
-    const goalNodeObj = nodes.find(n => n.id === 'F') || nodes[nodes.length - 1];
-    if (!startNodeObj || !goalNodeObj) return [];
+    const start = activeStartId;
+    const goal = activeGoalId;
+    if (!start || !goal) return [];
     
     const path = [];
-    let curr: string | null = goalNodeObj.id;
+    let curr: string | null = goal;
     const seen = new Set<string>();
     while (curr && !seen.has(curr)) {
       seen.add(curr);
       path.push(curr);
-      if (curr === startNodeObj.id) break;
+      if (curr === start) break;
       curr = prevMap[curr] || null;
     }
-    if (path[path.length - 1] === startNodeObj.id) {
+    if (path[path.length - 1] === start) {
       return path.reverse();
     }
     return [];
@@ -303,6 +378,29 @@ export function SimulatorPage() {
       applyStep(currentStepIndex);
     }
   }, [currentStepIndex, steps, applyStep]);
+
+  // Keyboard shortcuts: Space = play/pause, ←/→ = step backward/forward
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in input/textarea
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (e.code === 'Space' && steps.length > 0) {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.code === 'ArrowLeft' && steps.length > 0) {
+        e.preventDefault();
+        handlePrevStep();
+      } else if (e.code === 'ArrowRight' && steps.length > 0) {
+        e.preventDefault();
+        handleNextStep();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [steps.length, currentStepIndex, isPlaying]);
 
   const handleReset = () => {
     setIsPlaying(false);
@@ -351,35 +449,73 @@ export function SimulatorPage() {
           return;
         }
 
-        const weightStr = prompt('Enter edge weight (positive integer):', '1');
-        if (weightStr === null) {
-          setFirstSelectedNodeId(null);
-          return;
-        }
-        const weight = parseInt(weightStr, 10);
-        if (isNaN(weight) || weight <= 0) {
-          setError('Edge weight must be a positive integer.');
-          setFirstSelectedNodeId(null);
-          return;
-        }
-
-        const newEdge: VisualEdge = {
-          source: firstSelectedNodeId,
-          target: nodeId,
-          weight,
-          state: 'unvisited'
-        };
-        setEdges(prev => [...prev, newEdge]);
-        setFirstSelectedNodeId(null);
-        setError(null);
+        // Show inline edge weight input instead of prompt()
+        setPendingEdgeTarget(nodeId);
+        setEdgeWeightInput('1');
       }
     }
+  };
+
+  const handleConfirmEdgeWeight = () => {
+    if (!firstSelectedNodeId || !pendingEdgeTarget) return;
+    
+    const weight = parseInt(edgeWeightInput, 10);
+    if (isNaN(weight) || weight <= 0) {
+      setError('Edge weight must be a positive integer.');
+      setPendingEdgeTarget(null);
+      setFirstSelectedNodeId(null);
+      return;
+    }
+
+    const newEdge: VisualEdge = {
+      source: firstSelectedNodeId,
+      target: pendingEdgeTarget,
+      weight,
+      state: 'unvisited'
+    };
+    setEdges(prev => [...prev, newEdge]);
+    setFirstSelectedNodeId(null);
+    setPendingEdgeTarget(null);
+    setError(null);
+  };
+
+  const handleCancelEdgeWeight = () => {
+    setPendingEdgeTarget(null);
+    setFirstSelectedNodeId(null);
   };
 
   const handleEdgeClick = (source: string, target: string) => {
     if (editorMode === 'delete') {
       setEdges(prev => prev.filter(e => !(e.source === source && e.target === target)));
+    } else if (editorMode === 'select') {
+      const edge = edges.find(e => (e.source === source && e.target === target) || (!isDirected && e.source === target && e.target === source));
+      if (edge) {
+        setEditingEdge({ source: edge.source, target: edge.target });
+        setEdgeWeightInput(edge.weight.toString());
+      }
     }
+  };
+
+  const handleConfirmEditEdgeWeight = () => {
+    if (!editingEdge) return;
+    const weight = parseInt(edgeWeightInput, 10);
+    if (isNaN(weight) || weight <= 0) {
+      setError('Edge weight must be a positive integer.');
+      setEditingEdge(null);
+      return;
+    }
+    setEdges(prev => prev.map(e => 
+      ((e.source === editingEdge.source && e.target === editingEdge.target) ||
+       (!isDirected && e.source === editingEdge.target && e.target === editingEdge.source))
+        ? { ...e, weight }
+        : e
+    ));
+    setEditingEdge(null);
+    setError(null);
+  };
+
+  const handleCancelEditEdgeWeight = () => {
+    setEditingEdge(null);
   };
 
   const handleClearGraph = () => {
@@ -396,6 +532,9 @@ export function SimulatorPage() {
     setFirstSelectedNodeId(null);
     setError(null);
   };
+
+  // Step progress percentage
+  const stepProgress = steps.length > 0 ? ((currentStepIndex + 1) / steps.length) * 100 : 0;
 
   return (
     <div className={styles.pageWrapper}>
@@ -425,17 +564,17 @@ export function SimulatorPage() {
               <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Editor Mode:</span>
               <div className="flex bg-black/40 rounded-lg p-1 border border-gray-800/80">
                 <button
-                  onClick={() => { setEditorMode('select'); setFirstSelectedNodeId(null); }}
+                  onClick={() => { setEditorMode('select'); setFirstSelectedNodeId(null); setPendingEdgeTarget(null); setEditingEdge(null); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                     editorMode === 'select'
                       ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  Move and Drag
+                  Select / Move
                 </button>
                 <button
-                  onClick={() => { setEditorMode('add_node'); setFirstSelectedNodeId(null); }}
+                  onClick={() => { setEditorMode('add_node'); setFirstSelectedNodeId(null); setPendingEdgeTarget(null); setEditingEdge(null); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                     editorMode === 'add_node'
                       ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
@@ -445,17 +584,17 @@ export function SimulatorPage() {
                   Add Node
                 </button>
                 <button
-                  onClick={() => { setEditorMode('add_edge'); setFirstSelectedNodeId(null); }}
+                  onClick={() => { setEditorMode('add_edge'); setFirstSelectedNodeId(null); setPendingEdgeTarget(null); setEditingEdge(null); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                     editorMode === 'add_edge'
                       ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
                       : 'text-gray-400 hover:text-white border border-transparent'
                   }`}
                 >
-                  Add Edge {firstSelectedNodeId && `(From ${firstSelectedNodeId}...)`}
+                  Add Edge {firstSelectedNodeId && !pendingEdgeTarget && `(From ${firstSelectedNodeId}...)`}
                 </button>
                 <button
-                  onClick={() => { setEditorMode('delete'); setFirstSelectedNodeId(null); }}
+                  onClick={() => { setEditorMode('delete'); setFirstSelectedNodeId(null); setPendingEdgeTarget(null); setEditingEdge(null); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
                     editorMode === 'delete'
                       ? 'bg-red-500/20 text-red-400 border border-red-500/30'
@@ -482,6 +621,71 @@ export function SimulatorPage() {
               </button>
             </div>
           </div>
+
+          {/* Inline Edge Weight Input (replaces prompt()) */}
+          {pendingEdgeTarget && firstSelectedNodeId && (
+            <div className={styles.edgeWeightBar}>
+              <span className="text-xs text-gray-300">
+                Edge <strong className="text-cyan-400">{firstSelectedNodeId}</strong> → <strong className="text-cyan-400">{pendingEdgeTarget}</strong>:
+              </span>
+              <input
+                type="number"
+                min="1"
+                value={edgeWeightInput}
+                onChange={(e) => setEdgeWeightInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmEdgeWeight(); if (e.key === 'Escape') handleCancelEdgeWeight(); }}
+                className={styles.edgeWeightInput}
+                autoFocus
+                placeholder="Weight"
+              />
+              <button onClick={handleConfirmEdgeWeight} className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 rounded-md text-xs font-bold text-emerald-400 transition-colors cursor-pointer">
+                Confirm
+              </button>
+              <button onClick={handleCancelEdgeWeight} className="px-3 py-1 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700 rounded-md text-xs font-bold text-gray-400 transition-colors cursor-pointer">
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Inline Edge Weight Edit Input */}
+          {editingEdge && (
+            <div className={styles.edgeWeightBar}>
+              <span className="text-xs text-gray-300">
+                Edit edge <strong className="text-cyan-400">{editingEdge.source}</strong> ⟷ <strong className="text-cyan-400">{editingEdge.target}</strong> weight:
+              </span>
+              <input
+                type="number"
+                min="1"
+                value={edgeWeightInput}
+                onChange={(e) => setEdgeWeightInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmEditEdgeWeight(); if (e.key === 'Escape') handleCancelEditEdgeWeight(); }}
+                className={styles.edgeWeightInput}
+                autoFocus
+                placeholder="Weight"
+              />
+              <button onClick={handleConfirmEditEdgeWeight} className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 rounded-md text-xs font-bold text-emerald-400 transition-colors cursor-pointer">
+                Save
+              </button>
+              <button onClick={handleCancelEditEdgeWeight} className="px-3 py-1 bg-gray-800/60 hover:bg-gray-700/60 border border-gray-700 rounded-md text-xs font-bold text-gray-400 transition-colors cursor-pointer">
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {/* Step Progress Bar */}
+          {steps.length > 0 && (
+            <div className={styles.stepProgressContainer}>
+              <span className="text-xs font-mono text-gray-400">
+                Step <strong className="text-gray-200">{currentStepIndex + 1}</strong> / {steps.length}
+              </span>
+              <div className={styles.stepProgressTrack}>
+                <div className={styles.stepProgressFill} style={{ width: `${stepProgress}%` }} />
+              </div>
+              <span className="text-[10px] text-gray-500 hidden sm:inline">
+                Space: play/pause · ←→: step
+              </span>
+            </div>
+          )}
 
           <div className="flex-1 min-h-[400px] relative">
             <CanvasVisualization
@@ -510,6 +714,19 @@ export function SimulatorPage() {
                   Success
                 </div>
               </div>
+
+              {/* Bellman-Ford negative cycle warning */}
+              {selectedAlgo === 'BellmanFord' && simulationResult.negative_cycle_detected && (
+                <div className="mb-4 bg-red-950/40 border border-red-500/40 rounded-xl p-4 flex gap-3 items-start animate-pulse">
+                  <AlertTriangle size={20} className="text-red-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-red-400 font-bold text-sm">Negative Weight Cycle Detected!</span>
+                    <p className="text-red-400/80 text-xs mt-1 leading-relaxed">
+                      The graph contains a negative weight cycle. Shortest path distances are undefined for nodes reachable through this cycle.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Metrics */}
@@ -542,10 +759,10 @@ export function SimulatorPage() {
                       <span className="text-xs font-bold text-gray-500 uppercase block mb-2">Shortest Path Found</span>
                       {(() => {
                         const path = getShortestPath();
-                        const goalNodeObj = nodes.find(n => n.id === 'F') || nodes[nodes.length - 1];
+                        const goal = goalNodeId || nodes[nodes.length - 1]?.id;
                         const distKey = 'distances';
                         const distMap = simulationResult[distKey] || {};
-                        const cost = goalNodeObj ? distMap[goalNodeObj.id] : null;
+                        const cost = goal ? distMap[goal] : null;
 
                         if (path.length > 0) {
                           return (
@@ -579,8 +796,8 @@ export function SimulatorPage() {
                     </div>
                   )}
 
-                  {/* Kruskal MST Results */}
-                  {selectedAlgo === 'Kruskal' && simulationResult.mst_edges && (
+                  {/* Kruskal & Prim MST Results */}
+                  {(selectedAlgo === 'Kruskal' || selectedAlgo === 'Prim') && simulationResult.mst_edges && (
                     <div>
                       <span className="text-xs font-bold text-gray-500 uppercase block mb-2">Minimum Spanning Tree Edges</span>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-black/40 p-3 rounded-lg border border-gray-800 mb-2">
@@ -641,12 +858,29 @@ export function SimulatorPage() {
               ) : (
                 <>
                   <button 
+                    onClick={handlePrevStep}
+                    disabled={currentStepIndex <= 0}
+                    className={styles.actionButton}
+                    title="Previous Step (←)"
+                  >
+                    <ChevronLeft size={18} />
+                  </button>
+                  <button 
                     onClick={togglePlay}
                     className={styles.actionButton}
+                    title="Play/Pause (Space)"
                   >
                     {isPlaying ? <Pause size={18} /> : <Play size={18} />}
                   </button>
-                  <button onClick={handleReset} className={styles.actionButton}>
+                  <button 
+                    onClick={handleNextStep}
+                    disabled={currentStepIndex >= steps.length - 1}
+                    className={styles.actionButton}
+                    title="Next Step (→)"
+                  >
+                    <ChevronRight size={18} />
+                  </button>
+                  <button onClick={handleReset} className={styles.actionButton} title="Reset">
                     <RotateCcw size={18} />
                   </button>
                 </>
@@ -680,24 +914,82 @@ export function SimulatorPage() {
 
         {/* Sidebar Info Panel */}
         <aside className={styles.sidebar}>
+          {/* Algorithm Card Selector */}
           <div>
             <h3 className={styles.sectionTitle}>Select Algorithm</h3>
-            <select
-              className={styles.selectInput}
-              value={selectedAlgo}
-              onChange={(e) => {
-                setSelectedAlgo(e.target.value as AlgoKey);
-                handleReset();
-              }}
-            >
-              <option value="BFS">Breadth-First Search</option>
-              <option value="DFS">Depth-First Search</option>
-              <option value="Dijkstra">Dijkstra&apos;s Shortest Path</option>
-              <option value="AStar">A* Heuristic Search</option>
-              <option value="Kruskal">Kruskal&apos;s MST</option>
-              <option value="BellmanFord">Bellman-Ford</option>
-            </select>
+            <div className={styles.algoCardGrid}>
+              {(Object.keys(ALGORITHM_DETAILS) as AlgoKey[]).map(key => {
+                const details = ALGORITHM_DETAILS[key];
+                const isActive = selectedAlgo === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setSelectedAlgo(key);
+                      handleReset();
+                    }}
+                    className={`${styles.algoCard} ${isActive ? styles.algoCardActive : ''}`}
+                  >
+                    <span className={styles.algoCardName}>{details.name}</span>
+                    <span className={styles.algoCardBadge}>{details.timeComplexity}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* Simulation Settings */}
+          {selectedAlgo !== 'Kruskal' && selectedAlgo !== 'Prim' && (
+            <div>
+              <h3 className={styles.sectionTitle}>Simulation Settings</h3>
+              <div className="bg-gray-950/40 p-4 border border-gray-800/80 rounded-xl space-y-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Start Node</label>
+                  <select
+                    value={activeStartId || ''}
+                    onChange={(e) => setStartNodeId(e.target.value)}
+                    disabled={steps.length > 0}
+                    className="w-full bg-gray-900/80 border border-gray-800 rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 outline-none focus:border-cyan-500/50 transition-colors"
+                  >
+                    {nodes.map(n => (
+                      <option key={n.id} value={n.id}>Node {n.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {selectedAlgo !== 'BFS' && selectedAlgo !== 'DFS' && selectedAlgo !== 'Dijkstra' && selectedAlgo !== 'BellmanFord' ? null : (
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Goal Node (Optional)</label>
+                    <select
+                      value={activeGoalId || ''}
+                      onChange={(e) => setGoalNodeId(e.target.value || null)}
+                      disabled={steps.length > 0}
+                      className="w-full bg-gray-900/80 border border-gray-800 rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 outline-none focus:border-cyan-500/50 transition-colors"
+                    >
+                      <option value="">None (Traverse fully)</option>
+                      {nodes.map(n => (
+                        <option key={n.id} value={n.id}>Node {n.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                {selectedAlgo === 'AStar' && (
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-1">Goal Node (Required)</label>
+                    <select
+                      value={activeGoalId || ''}
+                      onChange={(e) => setGoalNodeId(e.target.value)}
+                      disabled={steps.length > 0}
+                      className="w-full bg-gray-900/80 border border-gray-800 rounded-lg px-3 py-2 text-xs font-semibold text-gray-200 outline-none focus:border-cyan-500/50 transition-colors"
+                    >
+                      {nodes.map(n => (
+                        <option key={n.id} value={n.id}>Node {n.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Algorithm Info */}
           <div>
@@ -756,13 +1048,13 @@ export function SimulatorPage() {
             </div>
           )}
 
-          {/* Quiz Module */}
+          {/* Quiz Module — using proper hook subscription */}
           <QuizModule
             algorithm={selectedAlgo}
-            studentId={useUserStore.getState().user?.id}
+            studentId={userId}
             onQuizComplete={(result) => {
               if (result.passed) {
-                useUserStore.getState().trackAlgorithmMastered(selectedAlgo);
+                trackAlgorithmMastered(selectedAlgo);
               }
             }}
           />

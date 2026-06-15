@@ -218,6 +218,41 @@ class QuizService:
                 "correct": False,
                 "explanation": "Dijkstra with a binary heap is O((V+E) log V), which is faster than Bellman-Ford's O(V×E)."
             }
+        ],
+        "Prim": [
+            {
+                "type": "multiple_choice",
+                "question": "What does Prim's algorithm find?",
+                "options": ["Shortest path", "Minimum Spanning Tree", "Maximum flow", "All pairs shortest path"],
+                "correct": 1,
+                "explanation": "Prim's algorithm finds the Minimum Spanning Tree of a connected weighted undirected graph."
+            },
+            {
+                "type": "true_false",
+                "question": "Prim's algorithm is a greedy algorithm.",
+                "correct": True,
+                "explanation": "Prim's algorithm is greedy as it selects the cheapest edge connecting the tree to a new vertex at each step."
+            },
+            {
+                "type": "multiple_choice",
+                "question": "What is the primary difference in execution between Prim's and Kruskal's algorithms?",
+                "options": ["Prim's sorts all edges first", "Prim's grows a single tree continuously, whereas Kruskal's merges forests", "Prim's handles negative weights, Kruskal's does not", "Prim's is not optimal"],
+                "correct": 1,
+                "explanation": "Prim's grows a tree from a single starting vertex, adding one vertex at a time. Kruskal's sorts all edges and merges separate components."
+            },
+            {
+                "type": "multiple_choice",
+                "question": "What is the worst-case time complexity of Prim's algorithm using a binary heap?",
+                "options": ["O(V²)", "O(V + E)", "O(E log V)", "O(V log V)"],
+                "correct": 2,
+                "explanation": "With a binary heap or priority queue, extracting vertices and updating edge weights takes O(E log V) time."
+            },
+            {
+                "type": "true_false",
+                "question": "Prim's algorithm only works on connected graphs.",
+                "correct": True,
+                "explanation": "Prim's grows a single tree. If the graph is disconnected, Prim's will only span one connected component. Kruskal's can find a Minimum Spanning Forest."
+            }
         ]
     }
     

@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Set
+from typing import Dict, Any, Optional, Set, List
 from collections import deque
 from .base import BaseAlgorithm, AlgorithmStep
 from core.data_structures.graph import Graph
@@ -24,6 +24,7 @@ class BFS(BaseAlgorithm):
         # Initialize
         queue = deque([start_node])
         visited = {start_node}
+        visit_order: List[str] = []
         distance = {node_id: float('inf') for node_id in self.graph.nodes}
         distance[start_node] = 0
         parent = {node_id: None for node_id in self.graph.nodes}
@@ -32,18 +33,19 @@ class BFS(BaseAlgorithm):
             "initialize",
             node=start_node,
             frontier=[start_node],
-            visited=visited,
+            visited=visited.copy(),
             message=f"Starting BFS from {start_node}"
         )
         
         while queue:
             current = queue.popleft()
+            visit_order.append(current)
             
             self.add_step(
                 "visit_node",
                 node=current,
                 frontier=list(queue),
-                visited=visited,
+                visited=visited.copy(),
                 message=f"Visiting node {current}"
             )
             
@@ -68,7 +70,7 @@ class BFS(BaseAlgorithm):
                         node=neighbor,
                         nodes_involved=[current, neighbor],
                         frontier=list(queue),
-                        visited=visited,
+                        visited=visited.copy(),
                         state_snapshot={
                             "distance": distance.copy(),
                             "parent": parent.copy()
@@ -78,7 +80,7 @@ class BFS(BaseAlgorithm):
         
         return {
             "algorithm": "BFS",
-            "visited_order": list(visited),
+            "visited_order": visit_order,
             "distance": distance,
             "parent_tree": parent,
             "steps": [step.to_dict() for step in self.steps]

@@ -10,7 +10,8 @@ const ALGORITHMS = [
   { key: 'Dijkstra', name: "Dijkstra's Algorithm" },
   { key: 'AStar', name: "A* Search" },
   { key: 'Kruskal', name: "Kruskal's Algorithm" },
-  { key: 'BellmanFord', name: "Bellman-Ford" }
+  { key: 'BellmanFord', name: "Bellman-Ford" },
+  { key: 'Prim', name: "Prim's Algorithm" }
 ];
 
 interface QuizAttempt {
@@ -29,6 +30,8 @@ interface ProgressData {
   quiz_attempts: QuizAttempt[];
 }
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
 export default function DashboardPage() {
   const user = useUserStore(state => state.user);
   const [data, setData] = useState<ProgressData | null>(null);
@@ -45,7 +48,7 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/student/progress/${user.id}`);
+        const res = await fetch(`${API_URL}/api/student/progress/${user.id}`);
         if (!res.ok) {
           throw new Error('Failed to fetch student progress data');
         }

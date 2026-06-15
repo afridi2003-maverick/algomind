@@ -16,7 +16,7 @@ export interface VisualEdge {
   source: string;
   target: string;
   weight: number;
-  state: 'unvisited' | 'frontier' | 'visiting' | 'visited';
+  state: 'unvisited' | 'frontier' | 'visiting' | 'visited' | 'goal';
 }
 
 interface CanvasVisualizationProps {
@@ -252,8 +252,8 @@ export default function CanvasVisualization({
       ctx.strokeStyle = colorScheme.stroke;
       ctx.lineWidth = edge.state !== 'unvisited' ? 4 : 2;
 
-      // Animate flowing dashes for evaluating/active edges
-      if (edge.state === 'visiting' || edge.state === 'frontier') {
+      // An animate flowing dashes for evaluating/active/goal edges
+      if (edge.state === 'visiting' || edge.state === 'frontier' || edge.state === 'goal') {
         ctx.setLineDash([8, 4]);
         ctx.lineDashOffset = -animationTime * 45;
       } else {
@@ -266,8 +266,8 @@ export default function CanvasVisualization({
       ctx.stroke();
       ctx.setLineDash([]); // Reset line dash
 
-      // Draw glowing particle pulses traveling down evaluating/active edges
-      if (edge.state === 'visiting' || edge.state === 'frontier') {
+      // Draw glowing particle pulses traveling down evaluating/active/goal edges
+      if (edge.state === 'visiting' || edge.state === 'frontier' || edge.state === 'goal') {
         const pulseProgress = (animationTime * 1.5) % 1.0;
         const pulseX = u.x + (v.x - u.x) * pulseProgress;
         const pulseY = u.y + (v.y - u.y) * pulseProgress;

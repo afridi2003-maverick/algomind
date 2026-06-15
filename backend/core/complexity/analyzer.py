@@ -40,6 +40,12 @@ class ComplexityAnalyzer:
             "optimal": True,
             "description": "Sorting edges + union-find. E log E dominates."
         },
+        "Prim": {
+            "time": "O(E log V)",
+            "space": "O(V)",
+            "optimal": True,
+            "description": "Priority queue based MST. O(E log V) with binary heap."
+        },
         "Bellman-Ford": {
             "time": "O(V * E)",
             "space": "O(V)",
@@ -97,6 +103,8 @@ class ComplexityAnalyzer:
             return int(e * __import__('math').log(v + 1))
         elif algorithm == "Kruskal":
             return int(e * __import__('math').log(e + 1))
+        elif algorithm == "Prim":
+            return int(e * __import__('math').log(v + 1))
         elif algorithm == "Bellman-Ford" or algorithm == "BellmanFord":
             return v * e
         return 0

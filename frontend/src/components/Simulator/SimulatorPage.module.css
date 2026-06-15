@@ -88,6 +88,11 @@
   border-color: rgba(255, 255, 255, 0.2);
 }
 
+.actionButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .primaryButton {
   background: linear-gradient(to right, #0ea5e9, #2563eb);
   color: white;
@@ -196,4 +201,118 @@
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-weight: bold;
+}
+
+/* ─── Step Progress Bar ─────────────────────────────────────── */
+
+.stepProgressContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
+.stepProgressTrack {
+  flex: 1;
+  height: 4px;
+  background-color: #1f2937;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.stepProgressFill {
+  height: 100%;
+  background: linear-gradient(to right, #0ea5e9, #10b981);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* ─── Inline Edge Weight Input ──────────────────────────────── */
+
+.edgeWeightBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  border-radius: 0.75rem;
+  backdrop-filter: blur(8px);
+}
+
+.edgeWeightInput {
+  width: 80px;
+  padding: 0.375rem 0.625rem;
+  background-color: #111827;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: 0.375rem;
+  color: #f3f4f6;
+  font-size: 0.875rem;
+  font-weight: 600;
+  outline: none;
+  text-align: center;
+}
+
+.edgeWeightInput:focus {
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+}
+
+/* ─── Algorithm Card Selector ───────────────────────────────── */
+
+.algoCardGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.algoCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.75rem;
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.625rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.algoCard:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.algoCardActive {
+  background-color: rgba(14, 165, 233, 0.08) !important;
+  border-color: rgba(14, 165, 233, 0.4) !important;
+  box-shadow: 0 0 12px rgba(14, 165, 233, 0.1);
+}
+
+.algoCardName {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #e5e7eb;
+  line-height: 1.2;
+}
+
+.algoCardActive .algoCardName {
+  color: #38bdf8;
+}
+
+.algoCardBadge {
+  font-family: monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+  padding: 0.125rem 0.375rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 0.25rem;
+  color: #9ca3af;
+}
+
+.algoCardActive .algoCardBadge {
+  background-color: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
 }
