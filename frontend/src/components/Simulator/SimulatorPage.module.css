@@ -1,11 +1,13 @@
 .pageWrapper {
   display: flex;
   flex-direction: column;
-  min-h: 100vh;
+  height: 100vh;
+  min-height: 100vh;
   background-color: #030712;
   color: #f3f4f6;
   font-family: system-ui, -apple-system, sans-serif;
   overflow-x: hidden;
+  overflow-y: hidden;
 }
 
 .header {
