@@ -1,0 +1,13 @@
+{
+  "name": "algomind-root",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build -w frontend",
+    "start": "npm start -w frontend",
+    "dev": "npm run dev -w frontend"
+  }
+}
