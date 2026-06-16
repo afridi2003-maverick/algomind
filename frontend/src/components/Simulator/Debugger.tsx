@@ -169,7 +169,7 @@ export default function Debugger({
                     ) : (
                       <div className="flex items-center justify-center gap-2 overflow-x-auto py-2">
                         {frontier.map((item: string, idx: number) => (
-                          <React.Fragment key={item}>
+                          <React.Fragment key={`${item}-${idx}`}>
                             <div className="px-3 py-1.5 bg-blue-500/15 border border-blue-500/30 rounded text-sm font-extrabold text-blue-400">
                               {item}
                             </div>
@@ -190,7 +190,7 @@ export default function Debugger({
                       <div className="flex flex-col-reverse items-center justify-center gap-1.5 py-1">
                         {frontier.slice().reverse().map((item: string, idx: number) => (
                           <div 
-                            key={item} 
+                            key={`${item}-${idx}`} 
                             className={`w-16 py-1 bg-purple-500/15 border border-purple-500/30 rounded text-center text-sm font-extrabold text-purple-400 ${
                               idx === 0 ? 'border-b-4 border-b-purple-400 shadow-lg shadow-purple-500/10' : ''
                             }`}
