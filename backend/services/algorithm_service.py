@@ -101,7 +101,7 @@ class AlgorithmService:
                 edge_data["source"],
                 edge_data["target"],
                 edge_data.get("weight", 1.0),
-                edge_data.get("directed", False)
+                edge_data.get("directed", graph.is_directed)
             )
         
         return graph

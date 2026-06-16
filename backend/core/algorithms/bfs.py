@@ -68,6 +68,7 @@ class BFS(BaseAlgorithm):
                     self.add_step(
                         "explore",
                         node=neighbor,
+                        edge=(current, neighbor),
                         nodes_involved=[current, neighbor],
                         frontier=list(queue),
                         visited=visited.copy(),

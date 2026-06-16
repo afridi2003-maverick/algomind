@@ -25,10 +25,11 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title="AlgoMind API")
 
 # Setup CORS — read allowed origins from environment variable for deployment flexibility
-cors_origins = os.getenv("CORS_ORIGINS", os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")).split(",")
+cors_origins = os.getenv("CORS_ORIGINS", os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://algomind.pages.dev")).split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in cors_origins],
+    allow_origin_regex=r"https://.*\.pages\.dev",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

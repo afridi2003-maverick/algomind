@@ -74,6 +74,7 @@ class DFS(BaseAlgorithm):
                     self.add_step(
                         "explore",
                         node=neighbor,
+                        edge=(current, neighbor),
                         nodes_involved=[current, neighbor],
                         frontier=list(stack),
                         visited=visited.copy(),
