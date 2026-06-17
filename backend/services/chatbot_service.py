@@ -57,7 +57,7 @@ RULES:
         """
         system_prompt = self.build_system_prompt(context)
         
-        model_name = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+        model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
         
         # Format messages for OpenAI / Groq compatibility
         formatted_messages = [{"role": "system", "content": system_prompt}]
