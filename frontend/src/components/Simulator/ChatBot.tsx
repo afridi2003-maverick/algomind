@@ -105,7 +105,7 @@ export default function ChatBot({ algorithm, graphSize, currentStep }: ChatBotPr
       console.error('Chat error:', err);
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: "I'm having trouble connecting right now. Make sure the backend is running and the ANTHROPIC_API_KEY environment variable is set. In the meantime, I can explain that **" + algorithm + "** is a fascinating algorithm! Try re-sending your question."
+        content: "I'm having trouble connecting right now. Make sure the backend is running and the GROQ_API_KEY environment variable is set. In the meantime, I can explain that **" + algorithm + "** is a fascinating algorithm! Try re-sending your question."
       }]);
     } finally {
       setIsStreaming(false);

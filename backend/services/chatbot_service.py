@@ -1,12 +1,12 @@
 import os
 from typing import List, Dict, Any, Optional
-import anthropic
+from groq import Groq
 
 class ChatbotService:
-    """Claude-based chatbot integration."""
+    """Groq-based chatbot integration."""
     
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     
     def build_system_prompt(self, context: Dict[str, Any]) -> str:
         """Build dynamic system prompt with context."""
@@ -45,7 +45,7 @@ RULES:
         stream: bool = True
     ):
         """
-        Get ChatBot response from Claude.
+        Get ChatBot response from Groq.
         
         Args:
             messages: Conversation history
@@ -57,22 +57,32 @@ RULES:
         """
         system_prompt = self.build_system_prompt(context)
         
-        model_name = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+        model_name = os.getenv("GROQ_MODEL", "llama3-8b-8192")
+        
+        # Format messages for OpenAI / Groq compatibility
+        formatted_messages = [{"role": "system", "content": system_prompt}]
+        for msg in messages:
+            formatted_messages.append({
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", "")
+            })
         
         if stream:
-            with self.client.messages.stream(
+            response = self.client.chat.completions.create(
                 model=model_name,
+                messages=formatted_messages,
                 max_tokens=1000,
-                system=system_prompt,
-                messages=messages
-            ) as stream_resp:
-                for text in stream_resp.text_stream:
-                    yield text
-        else:
-            response = self.client.messages.create(
-                model=model_name,
-                max_tokens=1000,
-                system=system_prompt,
-                messages=messages
+                stream=True
             )
-            return response.content[0].text
+            for chunk in response:
+                content = chunk.choices[0].delta.content
+                if content is not None:
+                    yield content
+        else:
+            response = self.client.chat.completions.create(
+                model=model_name,
+                messages=formatted_messages,
+                max_tokens=1000,
+                stream=False
+            )
+            return response.choices[0].message.content
